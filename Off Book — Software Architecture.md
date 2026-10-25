@@ -12,6 +12,7 @@ Where the product is still undecided, this design assumes the following. Each is
 - Real-time rated games at 10+0 only at launch. Time control is a field on seeks, games and ratings, so more can be added without a schema change.
 - Players choose an eval band and whether they take the better or worse side (opponent rating ranges come after launch), see the position and its eval before play, and may abort before the first move.
 - Open source, so GPL components are usable and the server is published.
+- Until launch, deployed builds are used by the developer alone, so obligations owed to users, such as licence notices and source offers (X-07), fall due at launch.
 - One developer. At launch everything live runs as a single Node.js process with PostgreSQL as the only store; the services below are module boundaries inside it, split out only when load demands it.
 
 ## System overview

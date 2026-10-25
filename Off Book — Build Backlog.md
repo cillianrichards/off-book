@@ -169,7 +169,7 @@ These run alongside Phases 3 to 5 and must be done before launch.
 - [ ] **X-04 Rate limits.** API and WebSocket message limits per connection and per account.
 - [ ] **X-05 Privacy.** UK GDPR privacy notice, lawful basis for device signals, data export and account deletion. Deletion anonymises the user but keeps games and rating events, because opponents' histories depend on them.
 - [ ] **X-06 Terms and cookies.** Terms of service and cookie consent.
-- [ ] **X-07 AGPL compliance.** The running app links to its exact source, as the AGPL requires for network users; contributing guide.
+- [ ] **X-07 Licence compliance.** The deployed app links to the exact source commit it is running, as the AGPL requires for network users. It serves a third-party notices page generated from the shipped client bundle, not kept by hand; chess.js's BSD licence requires this. The analysis board links to the exact source of the Stockfish build it serves, with Stockfish's licence and acknowledgements. Done when all three can be followed from production. Due before anyone other than the developer uses a deployed build, which is assumed to be launch.
 - [ ] **X-08 Security.** Dependency scanning in CI, secrets out of the repository, session and CSRF protection.
 - [ ] **X-09 Accessibility.** Keyboard move entry, and screen-reader announcements of moves and clocks.
 
