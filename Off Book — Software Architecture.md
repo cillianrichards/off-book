@@ -33,7 +33,7 @@ The pool is built offline and published as an immutable version; nothing in live
    - Sharpness: record the best-move gap so the monthly check can show whether sharp positions are mispriced.
 4. **Publish.** Write pool vN to PostgreSQL and load it into the position catalogue. Old versions stay readable forever, because finished games reference them.
 
-This is batch numerical work with no latency requirement, so it can be written in whatever you analyse data fastest in (Julia or Python), independently of the live stack.
+This is batch numerical work with no latency requirement, so it is written in Python, independently of the live stack.
 
 ## Game service
 
@@ -168,8 +168,8 @@ TypeScript end to end for everything live, so client and server share one rules 
 | Live state | In memory, every move written through to PostgreSQL | A restart reloads games in progress; Redis only once there are several instances |
 | Store | PostgreSQL | Relational integrity across versions and games |
 | Events | Transactional outbox table in PostgreSQL | No broker to run |
-| Pipeline | Julia or Python with the Stockfish CLI | Batch analysis, off the critical path |
-| Hosting | Azure Container Apps, Azure Database for PostgreSQL, Blob Storage | Managed services; pipelines and boards in Azure DevOps |
+| Pipeline | Python with the Stockfish CLI | Batch analysis, off the critical path |
+| Hosting | Azure Container Apps, Azure Database for PostgreSQL, Blob Storage | Managed services; code, CI and backlog on GitHub |
 
 ## Build phases
 
@@ -184,7 +184,7 @@ Build the riskiest part first: the concept fails if eval cannot predict results 
 
 ## Open architectural questions
 
-**Decided (25 October 2026):** no re-rating on recalibration; absolute-eval bands with a chosen side, capped at 3; eval shown before play; one redraw per player per pairing, not counted as an abort, then aborts return both to the lobby, with at most three consecutive aborts; 10+0 only at launch; the rating offset is 64 points per pawn of the position's exact eval; a human opponent takes priority over the exact band, and there are no engine opponents; opponent rating ranges built but disabled at launch; open source; sole developer. Liquidity is the largest risk and is accepted for now.
+**Decided (25 October 2026):** no re-rating on recalibration; absolute-eval bands with a chosen side, capped at 3; eval shown before play; one redraw per player per pairing, not counted as an abort, then aborts return both to the lobby, with at most three consecutive aborts; 10+0 only at launch; the rating offset is 64 points per pawn of the position's exact eval; a human opponent takes priority over the exact band, and there are no engine opponents; opponent rating ranges built but disabled at launch; open source; sole developer; code, CI (GitHub Actions) and backlog on GitHub, with the repository as the source of truth and commits straight to `main`; offline pipeline in Python. Liquidity is the largest risk and is accepted for now.
 
 1. **How long before a seek widens?** Too short and nobody gets the band they asked for; too long and the second player online leaves before the first is matched.
 2. **How do you concentrate players in time?** With one time control and no engine opponents, the number of people online at the same moment decides everything. Scheduled sessions, arenas or notifications when someone is seeking are the usual levers.
