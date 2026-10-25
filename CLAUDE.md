@@ -28,6 +28,7 @@ This repository is the source of truth for code and docs. Read the relevant doc 
 ## Build order and scope
 
 - Riskiest first. Phases 1 (pool) and 2 (calibration) can kill the project, so no interface work until Phase 2's exit test passes, unless told otherwise.
+- Where a choice is in doubt, follow Lichess's precedent, and say which precedent was followed.
 - No scope the backlog doesn't contain. If something is missing, propose it as a new backlog item and wait for agreement before building it.
 
 ## Technical constraints
