@@ -14,7 +14,7 @@ This repository is the source of truth for code and docs. Read the relevant doc 
 - Commit and push straight to `main`. No branches or pull requests unless asked.
 - Pull before starting work and again before pushing.
 - Small commits, each doing one thing. The message says what changed and why, prefixed with the backlog ID where there is one (`P1-02: …`).
-- Once CI exists (P0-02), a red build on `main` is fixed before anything else.
+- A red build on `main` is fixed before anything else. Run the checks listed in the README before pushing.
 - Never commit secrets, credentials, Lichess dumps, Stockfish binaries or network files, or generated pools. Large data stays out of git.
 ## Keeping the docs honest
 

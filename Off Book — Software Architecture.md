@@ -161,7 +161,7 @@ TypeScript end to end for everything live, so client and server share one rules 
 | Layer | Choice | Reason |
 | --- | --- | --- |
 | Licence | AGPL-3.0-or-later; third-party licences in `THIRD_PARTY_LICENCES.md` | Server code stays open even when run as a service, the same choice Lichess made |
-| Repository | pnpm workspaces (`packages/rules`, `apps/server`, `apps/client`) plus `pipeline/` managed by uv | One repository, one shared rules package, pipeline kept independent |
+| Repository | pnpm workspaces (`packages/rules`, `apps/server`, `apps/client`, `tools/`) plus `pipeline/` managed by uv | One repository, one shared rules package, pipeline kept independent |
 | Client | TypeScript, React, PWA | One codebase for web and later native wrappers |
 | Board | chessground, npm `@lichess-org/chessground` (GPL-3.0-or-later) | The strongest open board, compatible now that the project is open source |
 | Post-game analysis | Stockfish compiled to WebAssembly (GPL-3.0), in the browser | Analysis costs no server CPU |
@@ -172,6 +172,7 @@ TypeScript end to end for everything live, so client and server share one rules 
 | Events | Transactional outbox table in PostgreSQL | No broker to run |
 | Pipeline | Python with the Stockfish CLI | Batch analysis, off the critical path |
 | Hosting | Azure Container Apps, Azure Database for PostgreSQL, Blob Storage | Managed services; code, CI and backlog on GitHub |
+| Checks | GitHub Actions on every push to `main`. TypeScript: oxlint with type-aware rules, oxfmt, `tsc` and Node's built-in test runner. Pipeline: Ruff, mypy (strict) and pytest. A licence check holds every installed package to an AGPL-compatible allowlist and every direct dependency to `THIRD_PARTY_LICENCES.md` | Lichess's TypeScript toolchain; Node runs the tests directly with no test framework to maintain |
 
 ## Build phases
 
@@ -186,7 +187,7 @@ Build the riskiest part first: the concept fails if eval cannot predict results 
 
 ## Open architectural questions
 
-**Decided (25 October 2026):** no re-rating on recalibration; absolute-eval bands with a chosen side, capped at 3; eval shown before play; one redraw per player per pairing, not counted as an abort, then aborts return both to the lobby, with at most three consecutive aborts; 10+0 only at launch; the rating offset is 64 points per pawn of the position's exact eval; a human opponent takes priority over the exact band, and there are no engine opponents; opponent rating ranges built but disabled at launch; open source under AGPL-3.0-or-later, as Lichess; not a commercial venture; where a choice is in doubt, Lichess's precedent decides; no contributor licence agreement, as Lichess: contributors keep their copyright and license their work under AGPL-3.0-or-later by submitting it; sole developer; code, CI (GitHub Actions) and backlog on GitHub, with the repository as the source of truth and commits straight to `main`; offline pipeline in Python. Liquidity is the largest risk and is accepted for now.
+**Decided (25 October 2026):** no re-rating on recalibration; absolute-eval bands with a chosen side, capped at 3; eval shown before play; one redraw per player per pairing, not counted as an abort, then aborts return both to the lobby, with at most three consecutive aborts; 10+0 only at launch; the rating offset is 64 points per pawn of the position's exact eval; a human opponent takes priority over the exact band, and there are no engine opponents; opponent rating ranges built but disabled at launch; open source under AGPL-3.0-or-later, as Lichess; not a commercial venture; where a choice is in doubt, Lichess's precedent decides; no contributor licence agreement, as Lichess: contributors keep their copyright and license their work under AGPL-3.0-or-later by submitting it; sole developer; code, CI (GitHub Actions) and backlog on GitHub, with the repository as the source of truth and commits straight to `main`; offline pipeline in Python; TypeScript checks follow Lichess (oxlint, oxfmt, Node's test runner) and the pipeline uses Ruff, mypy and pytest; the licence check applies the allowlist to every installed package, direct or transitive, but requires only direct dependencies in `THIRD_PARTY_LICENCES.md`, since that register is kept by hand and the shipped notices are generated (X-07). Liquidity is the largest risk and is accepted for now.
 
 1. **How long before a seek widens?** Too short and nobody gets the band they asked for; too long and the second player online leaves before the first is matched.
 2. **How do you concentrate players in time?** With one time control and no engine opponents, the number of people online at the same moment decides everything. Scheduled sessions, arenas or notifications when someone is seeking are the usual levers.
