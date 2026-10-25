@@ -49,7 +49,7 @@ jobs:
         with:
           working-directory: pipeline
           enable-cache: true
-          cache-dependency-glob: pipeline/uv.lock
+          cache-dependency-glob: uv.lock # relative to working-directory
       - run: uv sync --locked
       - name: Lint
         run: uv run --locked ruff check
@@ -74,7 +74,7 @@ jobs:
         with:
           working-directory: pipeline
           enable-cache: true
-          cache-dependency-glob: pipeline/uv.lock
+          cache-dependency-glob: uv.lock # relative to working-directory
       - run: pnpm install --frozen-lockfile
       - run: uv sync --locked --directory pipeline
       - name: Check licences
