@@ -172,6 +172,7 @@ These run alongside Phases 3 to 5 and must be done before launch.
 - [ ] **X-07 Licence compliance.** The deployed app links to the exact source commit it is running, as the AGPL requires for network users. It serves a third-party notices page generated from the shipped client bundle, not kept by hand; chess.js's BSD licence requires this. The analysis board links to the exact source of the Stockfish build it serves, with Stockfish's licence and acknowledgements. Done when all three can be followed from production. Due before anyone other than the developer uses a deployed build, which is assumed to be launch.
 - [ ] **X-08 Security.** Dependency scanning in CI, secrets out of the repository, session and CSRF protection.
 - [ ] **X-09 Accessibility.** Keyboard move entry, and screen-reader announcements of moves and clocks.
+- [ ] **X-10 Contributor licence agreement.** Choose its form: a copyright licence with the right to sublicense, which permits dual licensing, or copyright assignment. A check on every pull request blocks merging until the author has signed; a contributing guide explains the agreement. Due before the first outside contribution is merged, which may be earlier than launch.
 
 ## Decisions and spikes
 

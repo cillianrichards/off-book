@@ -16,6 +16,7 @@ This repository is the source of truth for code and docs. Read the relevant doc 
 - Small commits, each doing one thing. The message says what changed and why, prefixed with the backlog ID where there is one (`P1-02: …`).
 - Once CI exists (P0-02), a red build on `main` is fixed before anything else.
 - Never commit secrets, credentials, Lichess dumps, Stockfish binaries or network files, or generated pools. Large data stays out of git.
+- Never merge or copy in an outside contribution until its author has signed the contributor licence agreement (X-10).
 
 ## Keeping the docs honest
 
