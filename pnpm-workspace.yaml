@@ -1,8 +1,10 @@
 packages:
   - apps/*
   - packages/*
+  - tools/*
 
 # One version of each shared dependency across the workspace.
 # Every entry is listed with its licence in THIRD_PARTY_LICENCES.md.
 catalog:
   typescript: ~6.0.3
+  '@types/node': ^24.19.2

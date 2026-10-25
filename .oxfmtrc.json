@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "singleQuote": true,
+  "printWidth": 110,
+  "arrowParens": "avoid",
+  "endOfLine": "lf",
+  "bracketSameLine": true,
+  "sortPackageJson": false,
+  "ignorePatterns": ["**/*.md", "pipeline/", "pnpm-lock.yaml"]
+}

@@ -4,6 +4,15 @@ Off Book is licensed under the GNU Affero General Public License, version 3 or (
 
 This file is the register of every third-party component: what it is, its licence, why that licence is compatible, and what it obliges us to do. Any new dependency is added here in the same commit that adds it. Licences were checked against the upstream licence file and package metadata on 25 October 2026.
 
+## How CI checks this register
+
+The licence check (`pnpm check-licences`, run in CI) fails the build when:
+
+- any installed npm or PyPI package, direct or transitive, declares a licence that is not on the allowlist in `tools/licence-check/allowlist.json`, which gives the reason each licence is compatible;
+- any direct dependency, meaning one declared in a `package.json` or in `pipeline/pyproject.toml`, is not named in a table row below as `` `name` (npm) `` or `` `name` (PyPI) ``.
+
+Transitive packages are held to the allowlist but not listed here, because this file is written by hand; the notices shipped with the client are generated from the bundle (X-07). A package whose metadata declares no usable licence needs an override in the allowlist, pinned to its version, after its licence has been checked by hand.
+
 ## Why the licences combine
 
 - **GPL-3.0 components.** Section 13 of both the AGPL-3.0 and the GPL-3.0 expressly permits combining works under the two licences. Each part keeps its own licence; the AGPL's network-use clause applies to Off Book's own code. A "GPL-3.0-or-later" or "GPL-2.0-or-later" component can always be used under version 3.
@@ -13,8 +22,8 @@ This file is the register of every third-party component: what it is, its licenc
 
 | Component | Used in | Version checked | Licence | Compatible | Obligations |
 | --- | --- | --- | --- | --- | --- |
-| [chess.js](https://github.com/jhlywa/chess.js) | `packages/rules`, so client and server | 1.4.0 | BSD-2-Clause | Yes | Keep the copyright notice in source. The client bundle is a binary redistribution, so the notice must also ship with it (see below). |
-| [chessground](https://github.com/lichess-org/chessground), npm `@lichess-org/chessground` | `apps/client` (board) | 10.5.0 | GPL-3.0-or-later | Yes, via section 13 | Conveyed to browsers in the client bundle; our corresponding source is published under the AGPL. Use the scoped package: the unscoped `chessground` package on npm is marked as no longer supported. |
+| [chess.js](https://github.com/jhlywa/chess.js), `chess.js` (npm) | `packages/rules`, so client and server | 1.4.0 | BSD-2-Clause | Yes | Keep the copyright notice in source. The client bundle is a binary redistribution, so the notice must also ship with it (see below). |
+| [chessground](https://github.com/lichess-org/chessground), `@lichess-org/chessground` (npm) | `apps/client` (board) | 10.5.0 | GPL-3.0-or-later | Yes, via section 13 | Conveyed to browsers in the client bundle; our corresponding source is published under the AGPL. Use the scoped package: the unscoped `chessground` package on npm is marked as no longer supported. |
 | [Stockfish](https://github.com/official-stockfish/Stockfish), native CLI | `pipeline/` (pool analysis) | `master` at `ff3a6c5`; the exact build is pinned in P1-01 | GPL-3.0-or-later | Yes | None while the binary is only run, not distributed. It runs as a separate program over UCI and is not linked into our code. Its evaluations are data we publish in the pool, not a copy of Stockfish. Binaries and network files stay out of git. |
 | Stockfish compiled to WebAssembly | `apps/client` (analysis board, P3-26) | Candidates: `@lichess-org/stockfish-web` 0.5.0, `stockfish` 19.0.1 | GPL-3.0 family (see note) | Yes, either candidate | Sent to the player's browser, so it is conveyed. GPL-3.0 section 6(d) allows the corresponding source to sit on another server, but we stay responsible for it being available, so mirror or pin the exact upstream source of the build we ship, and link to it beside the engine. Keep Stockfish's licence and acknowledgements with the build: its networks are trained on Leela Chess Zero data released under the Open Database License. |
 
@@ -41,6 +50,10 @@ Used to build and check the code; not distributed with the app.
 | Tool | Package | Version | Licence |
 | --- | --- | --- | --- |
 | TypeScript | `typescript` (npm) | 6.0.3 | Apache-2.0 |
+| Node.js type definitions | `@types/node` (npm) | 24.19.2 | MIT |
+| oxlint, the linter Lichess uses | `oxlint` (npm) | 1.89.0 | MIT |
+| oxlint's type-aware rules | `oxlint-tsgolint` (npm) | 7.0.2005 | MIT |
+| oxfmt, the formatter Lichess uses | `oxfmt` (npm) | 0.74.0 | MIT |
 | pnpm | Installed separately, pinned by `packageManager` | 12.15.0 | MIT |
 | uv | Installed separately | ≥ 0.11 | MIT OR Apache-2.0 |
 | uv's build backend | `uv_build` (PyPI) | ≥ 0.11 | MIT OR Apache-2.0 |

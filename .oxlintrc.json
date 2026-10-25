@@ -1,0 +1,56 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["import", "node", "promise", "typescript", "unicorn"],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": ["**/dist/", "pipeline/"],
+  "options": {
+    "reportUnusedDisableDirectives": "error"
+  },
+  "rules": {
+    "consistent-return": "error",
+    "default-param-last": "error",
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "no-duplicate-imports": "error",
+    "no-implicit-coercion": ["error", { "boolean": false }],
+    "no-unused-expressions": ["error", { "allowShortCircuit": true, "allowTernary": true }],
+    "no-unused-vars": [
+      "error",
+      { "varsIgnorePattern": "^_", "argsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }
+    ],
+    "no-useless-return": "error",
+    "no-var": "error",
+    "object-shorthand": "error",
+    "one-var": ["error", "never"],
+    "prefer-const": "error",
+    "prefer-promise-reject-errors": "error",
+    "import/no-cycle": "error",
+    "import/no-duplicates": "error",
+    "import/no-self-import": "error",
+    "promise/no-multiple-resolved": "error",
+    "promise/no-return-wrap": "error",
+    "typescript/await-thenable": "error",
+    "typescript/consistent-type-assertions": "error",
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        "allowForKnownSafeCalls": [
+          { "from": "package", "package": "node:test", "name": ["describe", "suite", "test", "it"] }
+        ]
+      }
+    ],
+    "typescript/no-for-in-array": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/prefer-includes": "error",
+    "typescript/prefer-string-starts-ends-with": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "unicorn/error-message": "error",
+    "unicorn/prefer-node-protocol": "error",
+    "unicorn/prefer-set-has": "error"
+  }
+}

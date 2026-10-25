@@ -1,0 +1,23 @@
+{
+  "licences": {
+    "MIT": "Permissive (Expat). The FSF lists it as compatible with the GNU GPL.",
+    "ISC": "Permissive. The FSF lists it as compatible with the GNU GPL.",
+    "0BSD": "Permissive with no conditions at all, so nothing in it can conflict with the AGPL.",
+    "BSD-2-Clause": "Permissive (FreeBSD licence). The FSF lists it as compatible with the GNU GPL.",
+    "BSD-3-Clause": "Permissive (modified BSD licence). The FSF lists it as compatible with the GNU GPL.",
+    "Apache-2.0": "Permissive. The FSF lists it as compatible with GPL version 3, and so with AGPL version 3.",
+    "Zlib": "Permissive. The FSF lists it as compatible with the GNU GPL.",
+    "PSF-2.0": "Python Software Foundation licence. The FSF lists Python 2.0.1 and later licences as compatible with the GNU GPL.",
+    "CC0-1.0": "Public domain dedication with a permissive fallback. The FSF lists it as compatible with the GNU GPL.",
+    "MPL-2.0": "Weak copyleft. Section 3.3 allows combining with the GNU GPL and AGPL unless the code is marked \"Incompatible With Secondary Licenses\"; check for that notice when adding a direct MPL dependency.",
+    "LGPL-2.1-or-later": "Weak copyleft, usable under LGPL 3, which the FSF lists as compatible with GPL 3.",
+    "LGPL-3.0-only": "Weak copyleft. The FSF lists it as compatible with GPL 3.",
+    "LGPL-3.0-or-later": "Weak copyleft. The FSF lists it as compatible with GPL 3.",
+    "GPL-2.0-or-later": "Usable under GPL 3, which section 13 of the AGPL allows combining with.",
+    "GPL-3.0-only": "Section 13 of AGPL 3 and of GPL 3 allows combining the two.",
+    "GPL-3.0-or-later": "Section 13 of AGPL 3 and of GPL 3 allows combining the two.",
+    "AGPL-3.0-only": "Same licence as Off Book, at version 3.",
+    "AGPL-3.0-or-later": "Same licence as Off Book."
+  },
+  "overrides": []
+}

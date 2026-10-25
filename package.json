@@ -8,6 +8,16 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "pnpm -r typecheck"
+    "lint": "oxlint --type-aware --deny-warnings",
+    "format": "oxfmt",
+    "check-format": "oxfmt --check",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "check-licences": "node tools/licence-check/src/main.ts"
+  },
+  "devDependencies": {
+    "oxfmt": "0.74.0",
+    "oxlint": "1.89.0",
+    "oxlint-tsgolint": "7.0.2005"
   }
 }
