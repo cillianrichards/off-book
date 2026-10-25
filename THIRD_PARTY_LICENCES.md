@@ -38,8 +38,12 @@ Recorded here when the backlog item that needs them makes the choice.
 
 Used to build and check the code; not distributed with the app.
 
-| Tool | Version | Licence |
-| --- | --- | --- |
-| TypeScript | 6.0.3 | Apache-2.0 |
-| pnpm | 12.15.0 | MIT |
-| uv and its `uv_build` backend | uv ≥ 0.11 | MIT OR Apache-2.0 |
+| Tool | Package | Version | Licence |
+| --- | --- | --- | --- |
+| TypeScript | `typescript` (npm) | 6.0.3 | Apache-2.0 |
+| pnpm | Installed separately, pinned by `packageManager` | 12.15.0 | MIT |
+| uv | Installed separately | ≥ 0.11 | MIT OR Apache-2.0 |
+| uv's build backend | `uv_build` (PyPI) | ≥ 0.11 | MIT OR Apache-2.0 |
+| Ruff, the pipeline's linter and formatter | `ruff` (PyPI) | 0.17.2 | MIT |
+| mypy, the pipeline's type checker | `mypy` (PyPI) | 2.4.0 | MIT |
+| pytest, the pipeline's test runner | `pytest` (PyPI) | 9.1.1 | MIT |
