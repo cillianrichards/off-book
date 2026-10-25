@@ -1,0 +1,26 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+.venv/
+__pycache__/
+*.py[cod]
+
+# Large data and engine files stay out of git (see CLAUDE.md):
+# Stockfish binaries, network files, Lichess dumps and generated pools.
+*.nnue
+*.pgn.zst
+*.pgn.bz2
+pipeline/engine/
+pipeline/data/
+pipeline/out/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Editor and OS
+.DS_Store
+.idea/
+.vscode/
