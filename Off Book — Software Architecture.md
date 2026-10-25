@@ -159,11 +159,12 @@ TypeScript end to end for everything live, so client and server share one rules 
 
 | Layer | Choice | Reason |
 | --- | --- | --- |
-| Licence | AGPL-3.0 | Server code stays open even when run as a service, the same choice Lichess made |
+| Licence | AGPL-3.0-or-later; third-party licences in `THIRD_PARTY_LICENCES.md` | Server code stays open even when run as a service, the same choice Lichess made |
+| Repository | pnpm workspaces (`packages/rules`, `apps/server`, `apps/client`) plus `pipeline/` managed by uv | One repository, one shared rules package, pipeline kept independent |
 | Client | TypeScript, React, PWA | One codebase for web and later native wrappers |
-| Board | chessground (GPL-3.0) | The strongest open board, compatible now that the project is open source |
-| Post-game analysis | Stockfish compiled to WebAssembly, in the browser | Analysis costs no server CPU |
-| Rules | chess.js (BSD) in a shared package | Identical move validation on client and server |
+| Board | chessground, npm `@lichess-org/chessground` (GPL-3.0-or-later) | The strongest open board, compatible now that the project is open source |
+| Post-game analysis | Stockfish compiled to WebAssembly (GPL-3.0), in the browser | Analysis costs no server CPU |
+| Rules | chess.js (BSD-2-Clause) in a shared package | Identical move validation on client and server |
 | Live server | One Node.js process: API, WebSocket games, lobby, rating | One thing to deploy, monitor and debug |
 | Live state | In memory, every move written through to PostgreSQL | A restart reloads games in progress; Redis only once there are several instances |
 | Store | PostgreSQL | Relational integrity across versions and games |
@@ -184,7 +185,7 @@ Build the riskiest part first: the concept fails if eval cannot predict results 
 
 ## Open architectural questions
 
-**Decided (25 October 2026):** no re-rating on recalibration; absolute-eval bands with a chosen side, capped at 3; eval shown before play; one redraw per player per pairing, not counted as an abort, then aborts return both to the lobby, with at most three consecutive aborts; 10+0 only at launch; the rating offset is 64 points per pawn of the position's exact eval; a human opponent takes priority over the exact band, and there are no engine opponents; opponent rating ranges built but disabled at launch; open source; sole developer; code, CI (GitHub Actions) and backlog on GitHub, with the repository as the source of truth and commits straight to `main`; offline pipeline in Python. Liquidity is the largest risk and is accepted for now.
+**Decided (25 October 2026):** no re-rating on recalibration; absolute-eval bands with a chosen side, capped at 3; eval shown before play; one redraw per player per pairing, not counted as an abort, then aborts return both to the lobby, with at most three consecutive aborts; 10+0 only at launch; the rating offset is 64 points per pawn of the position's exact eval; a human opponent takes priority over the exact band, and there are no engine opponents; opponent rating ranges built but disabled at launch; open source under AGPL-3.0-or-later, as Lichess; sole developer; code, CI (GitHub Actions) and backlog on GitHub, with the repository as the source of truth and commits straight to `main`; offline pipeline in Python. Liquidity is the largest risk and is accepted for now.
 
 1. **How long before a seek widens?** Too short and nobody gets the band they asked for; too long and the second player online leaves before the first is matched.
 2. **How do you concentrate players in time?** With one time control and no engine opponents, the number of people online at the same moment decides everything. Scheduled sessions, arenas or notifications when someone is seeking are the usual levers.
