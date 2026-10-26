@@ -34,12 +34,13 @@ describe('check', () => {
       [direct('a')],
       allowlist,
       new Set(['npm:a']),
+      'linux',
     );
     assert.deepEqual(problems, []);
   });
 
   test('fails a transitive package whose licence is not allowed', () => {
-    const problems = check([npm('a', 'GPL-2.0-only')], [], allowlist, new Set());
+    const problems = check([npm('a', 'GPL-2.0-only')], [], allowlist, new Set(), 'linux');
     assert.deepEqual(kinds(problems), ['not-allowed']);
     assert.match(problems[0]?.message ?? '', /npm a@1\.0\.0: GPL-2\.0-only/);
   });
@@ -50,6 +51,7 @@ describe('check', () => {
       [],
       allowlist,
       new Set(),
+      'linux',
     );
     assert.deepEqual(kinds(problems), ['no-licence', 'no-licence']);
   });
@@ -60,6 +62,7 @@ describe('check', () => {
       [direct('a'), direct('a'), direct('pytest', 'pypi')],
       allowlist,
       new Set(['npm:other']),
+      'linux',
     );
     assert.deepEqual(kinds(problems), ['unregistered', 'unregistered']);
     assert.match(problems[1]?.message ?? '', /`pytest` \(PyPI\)/);
@@ -71,6 +74,7 @@ describe('check', () => {
       [direct('Typing_Extensions', 'pypi')],
       allowlist,
       new Set(['pypi:typing-extensions']),
+      'linux',
     );
     assert.deepEqual(problems, []);
   });
@@ -82,8 +86,8 @@ describe('check', () => {
         { ecosystem: 'npm', name: 'a', version: '1.0.0', licence: 'MIT', reason: 'checked LICENSE' },
       ],
     };
-    assert.deepEqual(check([npm('a', undefined)], [], withOverride, new Set()), []);
-    assert.deepEqual(kinds(check([npm('a', undefined, '2.0.0')], [], withOverride, new Set())), [
+    assert.deepEqual(check([npm('a', undefined)], [], withOverride, new Set(), 'linux'), []);
+    assert.deepEqual(kinds(check([npm('a', undefined, '2.0.0')], [], withOverride, new Set(), 'linux')), [
       'no-licence',
       'unused-override',
     ]);
@@ -94,7 +98,33 @@ describe('check', () => {
       ...allowlist,
       overrides: [{ ecosystem: 'npm', name: 'a', version: '1.0.0', licence: 'SSPL-1.0', reason: 'checked' }],
     };
-    assert.deepEqual(kinds(check([npm('a', 'MIT')], [], withOverride, new Set())), ['not-allowed']);
+    assert.deepEqual(kinds(check([npm('a', 'MIT')], [], withOverride, new Set(), 'linux')), ['not-allowed']);
+  });
+
+  test('a platform-specific override must be used only on its own platform', () => {
+    const colorama: InstalledPackage = {
+      ecosystem: 'pypi',
+      name: 'colorama',
+      version: '0.4.6',
+      licence: undefined,
+      source: 'classifier',
+    };
+    const withOverride: Allowlist = {
+      ...allowlist,
+      overrides: [
+        {
+          ecosystem: 'pypi',
+          name: 'colorama',
+          version: '0.4.6',
+          licence: 'MIT',
+          reason: 'checked',
+          platform: 'win32',
+        },
+      ],
+    };
+    assert.deepEqual(check([colorama], [], withOverride, new Set(), 'win32'), []);
+    assert.deepEqual(check([], [], withOverride, new Set(), 'linux'), []);
+    assert.deepEqual(kinds(check([], [], withOverride, new Set(), 'win32')), ['unused-override']);
   });
 });
 
@@ -102,9 +132,14 @@ describe('loadAllowlist', () => {
   test('accepts a well-formed allowlist', () => {
     const loaded = loadAllowlist({
       licences: { MIT: 'permissive' },
-      overrides: [{ ecosystem: 'pypi', name: 'x', version: '1', licence: 'MIT', reason: 'checked' }],
+      overrides: [
+        { ecosystem: 'pypi', name: 'x', version: '1', licence: 'MIT', reason: 'checked' },
+        { ecosystem: 'pypi', name: 'y', version: '1', licence: 'MIT', reason: 'checked', platform: 'win32' },
+      ],
     });
-    assert.equal(loaded.overrides.length, 1);
+    assert.equal(loaded.overrides.length, 2);
+    assert.equal(loaded.overrides[0]?.platform, undefined);
+    assert.equal(loaded.overrides[1]?.platform, 'win32');
   });
 
   for (const [what, json] of [
@@ -120,6 +155,15 @@ describe('loadAllowlist', () => {
       {
         licences: {},
         overrides: [{ ecosystem: 'npm', name: 'a', version: '1', licence: 'MIT License', reason: 'x' }],
+      },
+    ],
+    [
+      'an override for an unknown platform',
+      {
+        licences: {},
+        overrides: [
+          { ecosystem: 'npm', name: 'a', version: '1', licence: 'MIT', reason: 'x', platform: 'windows' },
+        ],
       },
     ],
     ['a missing overrides list', { licences: {} }],

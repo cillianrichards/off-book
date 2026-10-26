@@ -84,6 +84,7 @@ const problems = check(
   [...npmDeclared, ...pythonDeclared],
   allowlist,
   registered,
+  process.platform,
 );
 
 const npmDirectCount = new Set(npmDeclared.map(d => d.name)).size;

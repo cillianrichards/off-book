@@ -14,7 +14,17 @@ export interface Override {
   readonly version: string;
   readonly licence: string;
   readonly reason: string;
+  /**
+   * The one platform the package is installed on, as Node names it (`process.platform`), for a
+   * platform-specific dependency such as pytest's colorama on Windows. Elsewhere the override is
+   * not reported as unused.
+   */
+  readonly platform?: Platform;
 }
+
+/** The platforms a developer or CI might run the check on. */
+export const platforms = ['darwin', 'linux', 'win32'] as const;
+export type Platform = (typeof platforms)[number];
 
 export interface Allowlist {
   /** Canonical SPDX identifier → why it is compatible with AGPL-3.0-or-later. */
@@ -67,12 +77,19 @@ export function loadAllowlist(json: unknown): Allowlist {
       throw new Error(`allowlist override ${index + 1} needs ecosystem, name, version, licence and reason`);
     }
     parse(value['licence']);
+    const platform = value['platform'];
+    if (platform !== undefined && !platforms.some(p => p === platform)) {
+      throw new Error(
+        `allowlist override ${index + 1} has platform ${JSON.stringify(platform)}; use one of ${platforms.join(', ')}`,
+      );
+    }
     return {
       ecosystem: value['ecosystem'],
       name: value['name'],
       version: value['version'],
       licence: value['licence'],
       reason: value['reason'],
+      ...(platform === undefined ? {} : { platform: platform as Platform }),
     };
   });
   return { licences, overrides };
@@ -87,6 +104,8 @@ export function check(
   direct: readonly DirectDependency[],
   allowlist: Allowlist,
   registered: ReadonlySet<string>,
+  /** Where the check is running, as `process.platform`; decides which overrides must be used. */
+  platform: string,
 ): Problem[] {
   const problems: Problem[] = [];
   const allowed = new Set(Object.keys(allowlist.licences).map(id => id.toLowerCase()));
@@ -140,7 +159,8 @@ export function check(
   }
 
   for (const override of allowlist.overrides) {
-    if (!usedOverrides.has(override)) {
+    const installedHere = override.platform === undefined || override.platform === platform;
+    if (installedHere && !usedOverrides.has(override)) {
       problems.push({
         kind: 'unused-override',
         message: `${label(override.ecosystem, override.name, override.version)}: allowlist override matches no installed package. Remove it, or update it after checking the new version.`,

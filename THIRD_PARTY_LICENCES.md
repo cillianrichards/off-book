@@ -11,7 +11,7 @@ The licence check (`pnpm check-licences`, run in CI) fails the build when:
 - any installed npm or PyPI package, direct or transitive, declares a licence that is not on the allowlist in `tools/licence-check/allowlist.json`, which gives the reason each licence is compatible;
 - any direct dependency, meaning one declared in a `package.json` or in `pipeline/pyproject.toml`, is not named in a table row below as `` `name` (npm) `` or `` `name` (PyPI) ``.
 
-Transitive packages are held to the allowlist but not listed here, because this file is written by hand; the notices shipped with the client are generated from the bundle (X-07). A package whose metadata declares no usable licence needs an override in the allowlist, pinned to its version, after its licence has been checked by hand.
+Transitive packages are held to the allowlist but not listed here, because this file is written by hand; the notices shipped with the client are generated from the bundle (X-07). A package whose metadata declares no usable licence needs an override in the allowlist, pinned to its version, after its licence has been checked by hand. If only one platform installs the package, the override names that platform (as Node's `process.platform` does), so the check elsewhere does not report it as unused: pytest, for instance, pulls in colorama only on Windows.
 
 ## Why the licences combine
 
