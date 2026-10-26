@@ -18,8 +18,8 @@ Done when every push to `main` builds and tests in GitHub Actions and a local Po
 
 - [x] **P0-01 Repository and licence.** Monorepo with `packages/rules`, `apps/server`, `apps/client` and a separate `pipeline/`. AGPL-3.0 licence file, plus a third-party licence list confirming chessground, chess.js and Stockfish are compatible.
 - [x] **P0-02 CI.** A GitHub Actions workflow lints, type-checks and tests every push to `main`, with a separate job for the Python pipeline. A licence check fails the build when any installed npm or Python package's licence is not on an AGPL-compatible allowlist, or when a direct dependency is missing from `THIRD_PARTY_LICENCES.md`.
-- [ ] **P0-03 Local stack.** One command starts PostgreSQL locally with seed data.
-- [ ] **P0-04 Migrations.** Migration tool chosen and run in CI. The first migration creates `PoolVersion`, `Position` and `CalibrationVersion`, the only tables Phases 1 and 2 need.
+- [ ] **P0-03 Migrations.** Migration tool chosen and run in CI against the local stack's PostgreSQL. The first migration creates `PoolVersion`, `Position` and `CalibrationVersion`, the only tables Phases 1 and 2 need.
+- [ ] **P0-04 Local stack.** `docker compose up --wait` starts PostgreSQL 18 with migrations applied, bound to localhost, image pinned by digest; `pnpm db:reset` wipes it. Server and pipeline both connect through `DATABASE_URL`, documented in `.env.example`. No seed data: nothing reads these tables before Phase 3 (P3-27). Done when CI starts the stack from nothing with the same compose file and finds the three tables present, empty and at the latest migration.
 - [ ] **P0-05 Fix the architecture doc.** Resolve D-01 to D-04 and update the document. Blocks Phase 3.
 
 ## Phase 1 — Pool v1
@@ -41,7 +41,7 @@ Exit test: every band you intend to offer holds enough positions, split by which
 
 - [ ] **P1-06 Filters.** Eval ceiling (absolute eval above 3, and every mate score), stability, rarity at both plies; best-move gap recorded. Every threshold is configuration stored in the filter settings, and the run reports how many positions each filter removed.
 - [ ] **P1-07 Band coverage report.** Positions per band, split by which colour is better. Flags any band where the worse side is almost always the same colour.
-- [ ] **P1-08 Publish pool v1.** `PoolVersion` and its positions written in one transaction; an existing version can never be overwritten.
+- [ ] **P1-08 Publish pool v1.** The pipeline writes pool v1 as a file plus manifest (engine build, search and filter settings, checksum) and attaches it to a GitHub release, which is its record; an existing version's release is never replaced. A loader verifies the checksum and writes `PoolVersion` and its positions to PostgreSQL in one transaction, refusing a version already present. Done when a reset database is rebuilt from the release alone.
 - [ ] **P1-09 Exit test.** Pass or fail per band against D-06. A failing band is dropped from launch, or a filter is relaxed and the pool republished as v2.
 
 ## Phase 2 — Calibration v1
@@ -102,6 +102,10 @@ Exit test: two people play an unrated 10+0 game from a pool position, with revea
 
 - [ ] **P3-25 PGN export.** `SetUp` and `FEN` tags on every game. Done when exports open at the right position in Lichess's analysis board and two desktop tools.
 - [ ] **P3-26 Analysis board.** Stockfish WebAssembly in the browser, starting from the game's FEN.
+
+**Development data**
+
+- [ ] **P3-27 Development seed.** One command loads a published pool version (P1-08's loader) and a few test users into the local database, so games can be played locally. *Needs P0-04, P1-08, P3-02.*
 
 ## Phase 4 — Ratings
 
