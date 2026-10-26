@@ -4,7 +4,7 @@ Oct 25, 2026 · @Cillian
 
 ## How to read this backlog
 
-Seven phases, built in order. Phases 1 and 2 test whether an eval can price results by rating band before any interface exists; launch follows Phase 5.
+This file is the board; there is no separate tracker. Seven phases, built in order. Phases 1 and 2 test whether an eval can price results by rating band before any interface exists; launch follows Phase 5.
 
 IDs carry their phase, so P3-08 is Phase 3, item 8. X items run alongside Phases 3 to 5, and D items are decisions, cited by the items that need them. Settle D-01 to D-04, four contradictions in the architecture, before Phase 3.
 
@@ -17,7 +17,7 @@ Phases 1 and 2 can stop the project before any interface is built. Cross-cutting
 Done when every push to `main` builds and tests in GitHub Actions and a local PostgreSQL holds the pool and calibration tables. Azure hosting waits until Phase 3, because nothing before then runs live.
 
 - [x] **P0-01 Repository and licence.** Monorepo with `packages/rules`, `apps/server`, `apps/client` and a separate `pipeline/`. AGPL-3.0 licence file, plus a third-party licence list confirming chessground, chess.js and Stockfish are compatible.
-- [x] **P0-02 CI.** This backlog file is the board; there is no separate tracker. A GitHub Actions workflow lints, type-checks and tests every push to `main`, with a separate job for the Python pipeline. A licence check fails the build when any installed npm or Python package's licence is not on an AGPL-compatible allowlist, or when a direct dependency is missing from `THIRD_PARTY_LICENCES.md`.
+- [x] **P0-02 CI.** A GitHub Actions workflow lints, type-checks and tests every push to `main`, with a separate job for the Python pipeline. A licence check fails the build when any installed npm or Python package's licence is not on an AGPL-compatible allowlist, or when a direct dependency is missing from `THIRD_PARTY_LICENCES.md`.
 - [ ] **P0-03 Local stack.** One command starts PostgreSQL locally with seed data.
 - [ ] **P0-04 Migrations.** Migration tool chosen and run in CI. The first migration creates `PoolVersion`, `Position` and `CalibrationVersion`, the only tables Phases 1 and 2 need.
 - [ ] **P0-05 Fix the architecture doc.** Resolve D-01 to D-04 and update the document. Blocks Phase 3.
