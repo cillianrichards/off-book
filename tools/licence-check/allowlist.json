@@ -19,5 +19,14 @@
     "AGPL-3.0-only": "Same licence as Off Book, at version 3.",
     "AGPL-3.0-or-later": "Same licence as Off Book."
   },
-  "overrides": []
+  "overrides": [
+    {
+      "ecosystem": "pypi",
+      "name": "colorama",
+      "version": "0.4.6",
+      "licence": "BSD-3-Clause",
+      "reason": "Metadata gives only the classifier \"BSD License\". The LICENSE.txt in the wheel pinned by uv.lock (sha256 4f1d9991…) is the three-clause BSD text, including the non-endorsement clause; checked 26 October 2026.",
+      "platform": "win32"
+    }
+  ]
 }
