@@ -15,6 +15,7 @@ import {
   pythonInstalled,
   type PythonInventory,
 } from './inventory.ts';
+import { pnpmInvocation } from './pnpm.ts';
 import { registeredPackages } from './register.ts';
 
 const root = path.resolve(import.meta.dirname, '../../..');
@@ -28,6 +29,11 @@ function run(command: string, args: readonly string[]): string {
     stdio: ['ignore', 'pipe', 'inherit'],
     maxBuffer: 64 * 1024 * 1024,
   });
+}
+
+function pnpm(args: readonly string[]): string {
+  const { command, args: fullArgs } = pnpmInvocation(args, process.env['npm_execpath'], process.execPath);
+  return run(command, fullArgs);
 }
 
 function parseJson(text: string, what: string): unknown {
@@ -45,7 +51,7 @@ function readJson(relative: string): unknown {
 const allowlist = loadAllowlist(readJson(allowlistPath));
 const registered = registeredPackages(readFileSync(path.join(root, registerPath), 'utf8'));
 
-const projects = parseJson(run('pnpm', ['-r', 'ls', '--json', '--depth', '-1']), 'pnpm ls') as {
+const projects = parseJson(pnpm(['-r', 'ls', '--json', '--depth', '-1']), 'pnpm ls') as {
   path: string;
 }[];
 const npmDeclared = projects.flatMap(project => {
@@ -53,7 +59,7 @@ const npmDeclared = projects.flatMap(project => {
   return npmDirect(readJson(manifest) as Manifest, manifest);
 });
 const npmPackages = npmInstalled(
-  parseJson(run('pnpm', ['-r', 'licenses', 'list', '--json']), 'pnpm licenses') as PnpmLicences,
+  parseJson(pnpm(['-r', 'licenses', 'list', '--json']), 'pnpm licenses') as PnpmLicences,
 );
 
 const python = parseJson(
