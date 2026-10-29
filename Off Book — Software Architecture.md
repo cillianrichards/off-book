@@ -72,7 +72,7 @@ The known weakness is that one curve covers every player, while strong players c
 
 **Calibration loop**
 
-1. Launch with one constant, 64 points per pawn, as calibration v1. Before launch, check it against Lichess 10+0 games by eval bucket and rating tier.
+1. Launch with one constant, 64 points per pawn, as calibration v1. Each calibration version's record is a small file committed to the repository and never edited; like a pool, it is loaded into PostgreSQL rather than kept only there. Before launch, check it against Lichess 10+0 games by eval bucket and rating tier.
 2. Each month, compare actual with predicted score in a table by band and rating tier. A persistent gap is a farmable edge.
 3. If a tier drifts, give it its own constant and publish calibration vN+1. It applies to new games only and is still one explainable number per tier.
 
@@ -172,10 +172,10 @@ TypeScript end to end for everything live, so client and server share one rules 
 | Events | Transactional outbox table in PostgreSQL | No broker to run |
 | Pipeline | Python with the Stockfish CLI | Batch analysis, off the critical path |
 | Published pools | Versioned files attached to GitHub releases, loaded into PostgreSQL | The record survives any database being reset or replaced, and costs nothing to host. Pools stay out of git |
-| Migrations | dbmate (MIT), plain SQL files run in order and recorded in the database | Two languages share the database, so the schema belongs to neither: SQL reads the same from TypeScript and Python, and dbmate runs as a container inside the local stack |
+| Migrations | dbmate (MIT), plain SQL files run in order and recorded in the database; forward-only | Two languages share the database, so the schema belongs to neither: SQL reads the same from TypeScript and Python, and dbmate runs as a container inside the local stack |
 | Local stack | Docker Compose running PostgreSQL 18, the version Azure will run; the same file in CI | One command to start, following Lichess's `lila-docker`; local and CI cannot drift apart |
 | Hosting | Azure Container Apps, Azure Database for PostgreSQL, Blob Storage | Managed services; code, CI and backlog on GitHub |
-| Checks | GitHub Actions on every push to `main`. TypeScript: oxlint with type-aware rules, oxfmt, `tsc` and Node's built-in test runner. Pipeline: Ruff, mypy (strict) and pytest. A licence check holds every installed package to an AGPL-compatible allowlist and every direct dependency to `THIRD_PARTY_LICENCES.md` | Lichess's TypeScript toolchain; Node runs the tests directly with no test framework to maintain |
+| Checks | GitHub Actions on every push to `main`, on Linux, with the TypeScript and licence jobs also on Windows, where development happens. TypeScript: oxlint with type-aware rules, oxfmt, `tsc` and Node's built-in test runner. Pipeline: Ruff, mypy (strict) and pytest. A licence check holds every installed package to an AGPL-compatible allowlist and every direct dependency to `THIRD_PARTY_LICENCES.md` | Lichess's TypeScript toolchain; Node runs the tests directly with no test framework to maintain |
 
 ## Build phases
 
@@ -194,7 +194,7 @@ Build the riskiest part first: the concept fails if eval cannot predict results 
 
 **Decided (26 October 2026):** a published pool's record is a versioned file attached to a GitHub release, not a database; loading it into PostgreSQL is separate, so every database, local or Azure, is disposable and rebuilt from the files. The local stack is Docker Compose with PostgreSQL 18, matching Azure, and CI uses the same compose file. Phases 1 and 2 need no seed data; seeding a development database waits for Phase 3 (P3-27).
 
-**Decided (29 October 2026):** the schema is changed only through migrations, run by dbmate as plain SQL, so neither the TypeScript server nor the Python pipeline owns it.
+**Decided (29 October 2026):** the schema is changed only through migrations, run by dbmate as plain SQL, so neither the TypeScript server nor the Python pipeline owns it. Migrations are forward-only: a mistake is fixed by a new migration. A calibration version's record is a file committed to the repository, loaded into PostgreSQL like a pool. CI also runs the TypeScript and licence checks on Windows. Resolving D-01 to D-04 moves from Phase 0 to the start of Phase 3, which is the first phase it blocks.
 
 1. **How long before a seek widens?** Too short and nobody gets the band they asked for; too long and the second player online leaves before the first is matched.
 2. **How do you concentrate players in time?** With one time control and no engine opponents, the number of people online at the same moment decides everything. Scheduled sessions, arenas or notifications when someone is seeking are the usual levers.

@@ -6,7 +6,7 @@ Oct 25, 2026 · @Cillian
 
 This file is the board; there is no separate tracker. Seven phases, built in order. Phases 1 and 2 test whether an eval can price results by rating band before any interface exists; launch follows Phase 5.
 
-IDs carry their phase, so P3-08 is Phase 3, item 8. X items run alongside Phases 3 to 5, and D items are decisions, cited by the items that need them. Settle D-01 to D-04, four contradictions in the architecture, before Phase 3.
+IDs carry their phase, so P3-08 is Phase 3, item 8. X items run alongside Phases 3 to 5, and D items are decisions, cited by the items that need them. Settle D-01 to D-04, four contradictions in the architecture, at the start of Phase 3 (P3-00).
 
 &#91;embedded content: build roadmap · 7 phases, 2 gates\]
 
@@ -14,13 +14,14 @@ Phases 1 and 2 can stop the project before any interface is built. Cross-cutting
 
 ## Phase 0 — Foundations
 
-Done when every push to `main` builds and tests in GitHub Actions and a local PostgreSQL holds the pool and calibration tables. Azure hosting waits until Phase 3, because nothing before then runs live.
+Done when every push to `main` is checked in GitHub Actions on Linux and Windows, and one command on a freshly set-up machine gives a PostgreSQL at the latest migration. Azure hosting waits until Phase 3, because nothing before then runs live.
 
 - [x] **P0-01 Repository and licence.** Monorepo with `packages/rules`, `apps/server`, `apps/client` and a separate `pipeline/`. AGPL-3.0 licence file, plus a third-party licence list confirming chessground, chess.js and Stockfish are compatible.
 - [x] **P0-02 CI.** A GitHub Actions workflow lints, type-checks and tests every push to `main`, with a separate job for the Python pipeline. A licence check fails the build when any installed npm or Python package's licence is not on an AGPL-compatible allowlist, or when a direct dependency is missing from `THIRD_PARTY_LICENCES.md`.
-- [ ] **P0-03 Migrations.** Migration tool chosen and run in CI against the local stack's PostgreSQL. The first migration creates `PoolVersion`, `Position` and `CalibrationVersion`, the only tables Phases 1 and 2 need.
-- [ ] **P0-04 Local stack.** `docker compose up --wait` starts PostgreSQL 18 with migrations applied, bound to localhost, image pinned by digest; `pnpm db:reset` wipes it. Server and pipeline both connect through `DATABASE_URL`, documented in `.env.example`. No seed data: nothing reads these tables before Phase 3 (P3-27). Done when CI starts the stack from nothing with the same compose file and finds the three tables present, empty and at the latest migration.
-- [ ] **P0-05 Fix the architecture doc.** Resolve D-01 to D-04 and update the document. Blocks Phase 3.
+- [ ] **P0-03 Local stack.** `docker compose up --wait` starts PostgreSQL 18, bound to localhost, image pinned by digest; `pnpm db:reset` wipes it. `DATABASE_URL` is documented in `.env.example`. No seed data: nothing reads the database before Phase 3 (P3-27). Done when CI starts the stack from nothing with the same compose file and connects.
+- [ ] **P0-04 Migrations.** dbmate, forward-only: a mistake is fixed by a new migration, never by editing or reversing an old one. The compose file runs it as a one-shot service before anything else connects. The first migration creates `PoolVersion`, `Position` and `CalibrationVersion`, the only tables Phases 1 and 2 need. Done when CI finds the three tables present, empty and at the latest migration.
+- [ ] **P0-05 Windows CI.** The TypeScript and licence jobs also run on `windows-latest`, since development happens on Windows and Linux-only CI missed CRLF line endings, pnpm's `.cmd` shim and a Windows-only dependency. The stack test stays on Linux, because GitHub's Windows runners cannot run Linux containers.
+- [ ] **P0-06 Developer setup.** The README lists prerequisites and install steps for Windows, macOS and Linux: Docker Desktop (with WSL 2 on Windows), Node through fnm, pnpm and uv. `engineStrict` makes `pnpm install` refuse the wrong Node version. Done when a fresh clone on Windows passes every check by following the README alone.
 
 ## Phase 1 — Pool v1
 
@@ -52,12 +53,16 @@ Exit test: on Lichess 10+0 games, actual score tracks predicted score in every e
 - [ ] **P2-02 Clamp.** Offset capped at the eval ceiling of 3 pawns, about 192 points.
 - [ ] **P2-03 Validation dataset.** Lichess 10+0 rated games with both ratings, the result, and the comparison position re-evaluated with the pinned engine settings. The dumps' `%eval` comments come from other engine versions and depths, so are not reused. *Needs P1-01, P1-03, P1-04, D-08.*
 - [ ] **P2-04 Calibration report.** Actual against predicted score by eval bucket and rating tier, with sample sizes and confidence intervals. Built to be rerun: the monthly check (P6-02) is the same table on Off Book's own games.
-- [ ] **P2-05 Publish calibration v1.** One constant, 64 points per pawn, as `CalibrationVersion` v1.
+- [ ] **P2-05 Publish calibration v1.** One constant, 64 points per pawn, as calibration v1: a file committed to the repository (`calibration/v1.json`), which is its record and is never edited, loaded into `CalibrationVersion` the same way as a pool. Done when a reset database is rebuilt from the file alone.
 - [ ] **P2-06 Exit decision.** Pass, or launch with per-tier constants as v1.
 
 ## Phase 3 — Playable core
 
 Exit test: two people play an unrated 10+0 game from a pool position, with reveal, redraw and abort. The game survives a server restart, and its PGN opens at the right position in Lichess's analysis board.
+
+**Design first**
+
+- [ ] **P3-00 Fix the architecture doc.** Resolve D-01 to D-04 and update the document. Blocks the rest of Phase 3.
 
 **Hosting and accounts**
 
@@ -176,11 +181,11 @@ These run alongside Phases 3 to 5 and must be done before launch.
 - [ ] **X-07 Licence compliance.** The deployed app links to the exact source commit it is running, as the AGPL requires for network users. It serves a third-party notices page generated from the shipped client bundle, not kept by hand; chess.js's BSD licence requires this. The analysis board links to the exact source of the Stockfish build it serves, with Stockfish's licence and acknowledgements. Done when all three can be followed from production. Due before anyone other than the developer uses a deployed build, which is assumed to be launch.
 - [ ] **X-08 Security.** Dependency scanning in CI, secrets out of the repository, session and CSRF protection.
 - [ ] **X-09 Accessibility.** Keyboard move entry, and screen-reader announcements of moves and clocks.
-- [ ] **X-10 Contributing guide.** Following Lichess, there is no contributor licence agreement: contributors keep their copyright and their work is licensed under AGPL-3.0-or-later when submitted. The guide says so, and covers setting up, running the tests and what a good pull request looks like.
+- [ ] **X-10 Contributing guide.** Following Lichess, there is no contributor licence agreement: contributors keep their copyright and their work is licensed under AGPL-3.0-or-later when submitted. The guide says so, and covers what a good pull request looks like; setting up and running the checks are in the README (P0-06).
 
 ## Decisions and spikes
 
-Settle D-01 to D-04 before Phase 3; each of the rest is needed by the item that cites it.
+Settle D-01 to D-04 at the start of Phase 3 (P3-00); each of the rest is needed by the item that cites it.
 
 **Contradictions in the architecture**
 
