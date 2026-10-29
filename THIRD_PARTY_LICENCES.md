@@ -34,6 +34,7 @@ Note on the WebAssembly candidates: `stockfish` (nmrugg/stockfish.js) declares `
 - **Shipped notices.** The client bundle must carry the licence notices of what it bundles. chess.js's BSD-2-Clause requires it outright.
 - **Engine source offer.** The analysis board's Stockfish build needs a link to its exact source.
 - **Network source offer.** Already covered by X-07: the running app links to its exact source.
+- **Code ported from lila.** lila's front end is AGPL-3.0-or-later, like Off Book, so its code may be ported into the client. Ported files keep lila's copyright notices, and each port is recorded in this file in the commit that makes it.
 
 ## Not yet chosen
 
