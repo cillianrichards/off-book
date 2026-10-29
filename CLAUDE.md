@@ -25,7 +25,8 @@ This repository is the source of truth for code and docs. Read the relevant doc 
 
 ## Build order and scope
 
-- Riskiest first. Phases 1 (pool) and 2 (calibration) can kill the project, so no interface work until Phase 2's exit test passes, unless told otherwise.
+- Riskiest first. Phase 1 (pool feasibility) can stop the project, so no interface work until its exit test passes, unless told otherwise.
+- Phase 2 (plain chess) is a milestone, not a product: build nothing that only standard-position play needs, and start every game from a FEN.
 - Where a choice is in doubt, follow Lichess's precedent, and say which precedent was followed.
 - No scope the backlog doesn't contain. If something is missing, propose it as a new backlog item and wait for agreement before building it.
 
