@@ -13,7 +13,8 @@
     "check-format": "oxfmt --check",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "check-licences": "node tools/licence-check/src/main.ts"
+    "check-licences": "node tools/licence-check/src/main.ts",
+    "db:reset": "docker compose down --volumes && docker compose up --wait"
   },
   "devDependencies": {
     "oxfmt": "0.74.0",

@@ -49,6 +49,7 @@ Used to build and check the code; not distributed with the app.
 
 | Tool | Package | Version | Licence |
 | --- | --- | --- | --- |
+| PostgreSQL, the local stack's database | Docker image `postgres`, pinned by digest in `compose.yaml` | 18 | PostgreSQL Licence (permissive). The image is pulled and run, not redistributed; its Debian base packages carry their own licences |
 | TypeScript | `typescript` (npm) | 6.0.3 | Apache-2.0 |
 | Node.js type definitions | `@types/node` (npm) | 24.19.2 | MIT |
 | oxlint, the linter Lichess uses | `oxlint` (npm) | 1.89.0 | MIT |

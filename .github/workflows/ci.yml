@@ -79,3 +79,30 @@ jobs:
       - run: uv sync --locked --directory pipeline
       - name: Check licences
         run: pnpm check-licences
+
+  stack:
+    # Local stack (P0-03): the same compose file, started from nothing, reached through .env.example's URL.
+    # Linux only: GitHub's Windows runners cannot run Linux containers.
+    name: Local stack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Start the stack
+        run: docker compose up --wait
+      - name: Connect with the documented DATABASE_URL
+        run: |
+          set -a; . ./.env.example; set +a
+          version=$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align --command 'show server_version_num')
+          echo "Connected to PostgreSQL $version"
+          test "$version" -ge 180000 && test "$version" -lt 190000
+      - name: Reset wipes the database
+        run: |
+          set -a; . ./.env.example; set +a
+          psql "$DATABASE_URL" --no-psqlrc --quiet --command 'create table reset_probe ()'
+          docker compose down --volumes && docker compose up --wait
+          count=$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align \
+            --command "select count(*) from pg_tables where tablename = 'reset_probe'")
+          test "$count" -eq 0
+      - name: Show the database log on failure
+        if: failure()
+        run: docker compose logs db

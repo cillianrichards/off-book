@@ -1,0 +1,35 @@
+# Local stack (P0-03): `docker compose up --wait` from the repository root.
+# The same file runs in CI, so local and CI cannot drift apart.
+#
+# Every database here is disposable: published pools and calibrations are files, and loading them is a
+# separate step, so `pnpm db:reset` loses nothing that cannot be rebuilt.
+
+name: off-book
+
+services:
+  db:
+    # PostgreSQL 18, the major version Azure will run. Pinned by digest, as CI's Actions are pinned by SHA;
+    # the tag is kept for readers and ignored by Docker.
+    image: postgres:18@sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4
+    environment:
+      # Local development only, never used anywhere else, so not a secret.
+      POSTGRES_USER: off_book
+      POSTGRES_PASSWORD: off_book
+      POSTGRES_DB: off_book
+    ports:
+      # Bound to localhost: Docker otherwise publishes on every interface, past the host firewall.
+      - '127.0.0.1:${OFF_BOOK_DB_PORT:-5432}:5432'
+    volumes:
+      # From PostgreSQL 18 the image keeps its data under /var/lib/postgresql/18, so the volume is mounted
+      # one level up, as the image expects.
+      - db:/var/lib/postgresql
+    healthcheck:
+      # `--wait` returns only once this passes. Checked over TCP, because the image's first start runs a
+      # temporary server on the Unix socket alone before the real one.
+      test: ['CMD-SHELL', 'pg_isready --host=127.0.0.1 --username=off_book --dbname=off_book']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  db:

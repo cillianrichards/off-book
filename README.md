@@ -37,6 +37,17 @@ uv run mypy
 uv run pytest
 ```
 
+Local database: Docker with Compose. PostgreSQL 18 runs in a container, bound to localhost.
+
+```sh
+cp .env.example .env     # DATABASE_URL for the local database
+docker compose up --wait # start it, and wait until it accepts connections
+pnpm db:reset            # wipe it and start again empty
+docker compose down      # stop it, keeping its data
+```
+
+Every local database is disposable: published pools and calibrations are files loaded into it, never kept only there.
+
 Licences, from the repository root once both of the above are installed:
 
 ```sh
