@@ -37,14 +37,17 @@ uv run mypy
 uv run pytest
 ```
 
-Local database: Docker with Compose. PostgreSQL 18 runs in a container, bound to localhost.
+Local database: Docker with Compose. PostgreSQL 18 runs in a container, bound to localhost, and dbmate applies the migrations in `db/migrations`.
 
 ```sh
 cp .env.example .env     # DATABASE_URL for the local database
-docker compose up --wait # start it, and wait until it accepts connections
-pnpm db:reset            # wipe it and start again empty
+pnpm db:up               # start it and apply every migration
+pnpm db:check            # migrations applied, tables present, versions immutable (needs bash: Git Bash on Windows)
+pnpm db:reset            # wipe it and start again, empty and migrated
 docker compose down      # stop it, keeping its data
 ```
+
+The schema changes only through migrations. Add one with `docker compose run --rm migrate new <name>`; it lands in `db/migrations`. Migrations are forward-only: never edit or roll back one that has been pushed; fix a mistake with a new migration.
 
 Every local database is disposable: published pools and calibrations are files loaded into it, never kept only there.
 

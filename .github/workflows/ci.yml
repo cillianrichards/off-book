@@ -81,7 +81,8 @@ jobs:
         run: pnpm check-licences
 
   stack:
-    # Local stack (P0-03): the same compose file, started from nothing, reached through .env.example's URL.
+    # Local stack (P0-03) and migrations (P0-04): the same compose file, started from nothing, reached
+    # through .env.example's URL, then migrated and checked by db/check.sh.
     # Linux only: GitHub's Windows runners cannot run Linux containers.
     name: Local stack
     runs-on: ubuntu-latest
@@ -103,6 +104,10 @@ jobs:
           count=$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --no-align \
             --command "select count(*) from pg_tables where tablename = 'reset_probe'")
           test "$count" -eq 0
+      - name: Migrate the empty database
+        run: docker compose run --rm migrate
+      - name: Check the schema
+        run: bash db/check.sh
       - name: Show the database log on failure
         if: failure()
         run: docker compose logs db

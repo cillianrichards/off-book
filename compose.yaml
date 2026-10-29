@@ -1,4 +1,5 @@
-# Local stack (P0-03): `docker compose up --wait` from the repository root.
+# Local stack (P0-03, P0-04): `pnpm db:up` from the repository root starts PostgreSQL and applies every
+# migration. `docker compose up --wait` alone starts PostgreSQL without migrating it.
 # The same file runs in CI, so local and CI cannot drift apart.
 #
 # Every database here is disposable: published pools and calibrations are files, and loading them is a
@@ -30,6 +31,25 @@ services:
       interval: 2s
       timeout: 5s
       retries: 30
+
+  migrate:
+    # dbmate (P0-04), run once by `pnpm db:up`: `docker compose run --rm migrate [command]`. It waits for a
+    # healthy database first. It sits behind a profile because `up --wait` counts a service that exits,
+    # even successfully, as a failure.
+    image: ghcr.io/amacneil/dbmate:2.37.0@sha256:0101fcc9999596f4a6930e5627296cd91f3bfa225e3e8c1699fc00881e439cc6
+    profiles: [migrate]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://off_book:off_book@db:5432/off_book?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      # The migrations are the schema's record; a dump would need pg_dump to match the server's version.
+      DBMATE_NO_DUMP_SCHEMA: 'true'
+    volumes:
+      # Writable, so `docker compose run --rm migrate new <name>` can add a migration here.
+      - ./db/migrations:/db/migrations
+    command: ['up']
 
 volumes:
   db:
