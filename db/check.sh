@@ -40,6 +40,12 @@ insert into position (pool_version, fen, ply, eval_cp, shallow_eval_cp, best_mov
 insert into calibration_version values (1, 64, repeat('c', 64), now());
 "
 
+# Stop at once if the database cannot be reached: every check below would fail for the same reason.
+if ! sql -c 'select 1' >/dev/null; then
+  echo 'Cannot reach the local database. Start it with `pnpm db:up`, and fix any error that reports first.'
+  exit 1
+fi
+
 if dbmate status --exit-code >/dev/null; then
   pass 'every migration is applied'
 else
