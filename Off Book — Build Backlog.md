@@ -48,7 +48,7 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 **Hosting and accounts**
 
 - [ ] **P2-01 Azure environments.** Container Apps, Azure Database for PostgreSQL and Blob Storage for staging and production, defined as code and deployed from GitHub Actions. Secrets in Key Vault.
-- [ ] **P2-02 Accounts and sign-in.** `User` with handle and status. A development-only sign-in for the seed's test users (P2-20), refused outside the local stack, so one person can play both sides. *Needs D-09.*
+- [ ] **P2-02 Sign in with Lichess.** OAuth 2 with PKCE against Lichess (D-09). `User` with Off Book's own id, handle and status; `Identity` links a Lichess account id to it. Off Book issues its own session, and the Lichess token is discarded once the account id is read. A development-only sign-in for the seed's test users (P2-20), refused outside the local stack, so one person can play both sides. *Needs D-17.*
 
 **Rules**
 
@@ -212,7 +212,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 **Design questions**
 
 - [ ] **D-08 Calibration test data.** In a Lichess game, a +2 position was reached by someone outplaying their opponent, so the advantage is confounded with form beyond rating. Real positions at ply 4 are near level and common, the opposite of the pool. Decide what the test uses and which bias you accept.
-- [ ] **D-09 Accounts.** Own accounts, or sign-in with Lichess.
+- [x] **D-09 Accounts.** Decided 29 October 2026: sign in with Lichess, since most players will have an account there. Off Book keeps its own user ids and sessions, and only `Identity` refers to Lichess, so another sign-in method can be added later without touching games or ratings (P2-02).
 - [ ] **D-10 Update timing.** Rate after every game, as Lichess does, or batch into Glicko-2 rating periods.
 - [ ] **D-11 Where the offset sits.** Glicko-2 scales the rating difference by the opponent's deviation. If the offset sits inside that scaling, an uncertain opponent shrinks it, and the expected score shown before play is not the one used.
 - [ ] **D-12 Void replay scope.** Removing a voided game changes the player's rating before their later games. Do those later opponents keep their ratings, and which pre-game ratings does the re-fold use for them?
@@ -220,3 +220,4 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 - [ ] **D-14 Concentrating players.** The doc's open question 2. With one time control and no engine opponents, this may be a launch requirement rather than Phase 6.
 - [ ] **D-15 Band persistence.** The doc's open question 3: does a chosen band re-post after a return to the lobby?
 - [ ] **D-16 Rarity definition.** Which Lichess rating bands and months define "common" for P3-01.
+- [ ] **D-17 Contact details.** Whether sign-in also asks Lichess for the player's email address (the `email:read` scope). With it, accounts can be recovered if Lichess sign-in stops working suddenly, at the cost of holding personal data under X-05 and a wider permission prompt. Without it, Off Book holds nothing personal beyond the Lichess account id, but a player who has not linked another sign-in method by then is locked out. Needed by P2-02.

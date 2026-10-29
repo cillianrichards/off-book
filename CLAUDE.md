@@ -34,6 +34,7 @@ This repository is the source of truth for code and docs. Read the relevant doc 
 
 - Live code is TypeScript end to end, with one shared rules package (chess.js) used by client and server.
 - The client is assembled from Lichess's open-source components; the server is Off Book's own, and lila is not forked. Code ported from lila keeps its copyright notices and is recorded in `THIRD_PARTY_LICENCES.md`.
+- Players sign in with Lichess, but Off Book's own user id is the key everywhere. Only `Identity` refers to a Lichess account, and no Lichess token is kept.
 - The offline pipeline (`pipeline/`) is Python, independent of the live stack.
 - Licence is AGPL-3.0-or-later. Every new dependency must be licence-compatible; state its licence when adding it, and add it to `THIRD_PARTY_LICENCES.md` in the same commit.
 - Nothing in live play calls Stockfish. Evals come only from a published, versioned pool.
