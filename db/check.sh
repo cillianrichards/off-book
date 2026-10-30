@@ -33,8 +33,9 @@ fail() {
 
 # One row in each table, inside the caller's transaction.
 fixtures="
-insert into pool_version values
-  (1, 'build', repeat('a', 64), 'nn-test.nnue', '{}', '{}', repeat('b', 64), now());
+insert into pool_version
+    (version, engine_build_hash, engine_bench, engine_network, search_settings, filter_settings, file_sha256, published_at)
+  values (1, 'build', 2497913, 'nn-test.nnue', '{}', '{}', repeat('b', 64), now());
 insert into position (pool_version, fen, ply, eval_cp, shallow_eval_cp, best_move_gap_cp, rarity_score)
   values (1, 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1', 1, 30, 25, 10, 0.5);
 insert into calibration_version values (1, 64, repeat('c', 64), now());
@@ -65,6 +66,7 @@ fi
 
 for statement in \
   'update pool_version set engine_network = null' \
+  'update pool_version set engine_bench = 1' \
   'delete from pool_version' \
   'truncate pool_version cascade' \
   'update position set eval_cp = 0' \
