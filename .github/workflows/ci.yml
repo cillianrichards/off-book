@@ -57,8 +57,25 @@ jobs:
         run: uv run --locked ruff format --check
       - name: Type-check
         run: uv run --locked mypy
+      # P1-01: the engine check runs against a real Stockfish 19 as well as a fake. Built from source rather
+      # than downloaded, which also shows that a build other than the official binaries passes.
+      - name: Restore Stockfish 19
+        id: stockfish
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/stockfish
+          key: stockfish-sf_19-x86-64-avx2
+      - name: Build Stockfish 19
+        if: steps.stockfish.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}
+        run: |
+          git clone --quiet --depth 1 --branch sf_19 https://github.com/official-stockfish/Stockfish.git source
+          make -C source/src -j"$(nproc)" build ARCH=x86-64-avx2 >/dev/null
+          mkdir -p stockfish && cp source/src/stockfish stockfish/
       - name: Test
         run: uv run --locked pytest
+        env:
+          OFF_BOOK_STOCKFISH: ${{ runner.temp }}/stockfish/stockfish
 
   licences:
     name: Licences

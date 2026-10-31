@@ -37,6 +37,8 @@ uv run mypy
 uv run pytest
 ```
 
+The pool is analysed with Stockfish 19 (P1-01). Any build of it will do, downloaded or compiled yourself: the pipeline checks the engine's bench signature, not the file, and refuses to run on anything else. Check a build by hand with `uv run python -m off_book_pipeline.engine PATH_TO_STOCKFISH`. Set `OFF_BOOK_STOCKFISH` to the same path and `pytest` runs its engine test against the real build as well as a fake; CI builds Stockfish 19 from source for this.
+
 Local database: Docker with Compose. PostgreSQL 18 runs in a container, bound to localhost, and dbmate applies the migrations in `db/migrations`.
 
 ```sh
