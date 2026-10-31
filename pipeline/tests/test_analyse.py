@@ -206,6 +206,16 @@ def test_an_interrupted_run_resumes_where_it_stopped(candidates: Path, tmp_path:
     assert len(output.read_text().splitlines()) == 401
 
 
+def test_a_failure_loses_no_finished_result(candidates: Path, tmp_path: Path) -> None:
+    # Three engines that each fail after 40 positions: every position one of them finished is recorded.
+    output = tmp_path / "out.jsonl"
+    with pytest.raises(RuntimeError, match="engine died"):
+        run(candidates, output, workers=3, fail_after=40)
+    _, partial = read_results(output)
+    assert sorted(partial) == sorted(analysed_fens())
+    assert len(partial) >= 40
+
+
 def test_a_line_cut_off_by_the_interruption_is_discarded(candidates: Path, tmp_path: Path) -> None:
     output = tmp_path / "out.jsonl"
     with pytest.raises(RuntimeError):

@@ -256,11 +256,24 @@ def run_analysis(
         return analyser.analyse(fen)
 
     analysed = 0
+    failure: BaseException | None = None
     pool = ThreadPoolExecutor(max_workers=workers)
     try:
         futures = [pool.submit(analyse, fen) for fen in todo]
         with output_path.open("a", encoding="utf-8", newline="\n") as output:
+            # as_completed yields futures that had already finished in no particular order, so a failure can
+            # arrive before results that finished earlier. On a failure, start no more positions but keep
+            # writing every result that finishes, so that resuming repeats no work.
             for future in as_completed(futures):
+                if future.cancelled():
+                    continue
+                error = future.exception()
+                if error is not None:
+                    if failure is None:
+                        failure = error
+                        for pending in futures:
+                            pending.cancel()
+                    continue
                 output.write(future.result().to_json() + "\n")
                 output.flush()
                 analysed += 1
@@ -270,6 +283,8 @@ def run_analysis(
         pool.shutdown(wait=True, cancel_futures=True)
         for analyser in analysers:
             analyser.close()
+    if failure is not None:
+        raise failure
     return RunSummary(candidates=len(fens), already_done=len(done), analysed=analysed)
 
 
