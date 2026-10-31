@@ -25,7 +25,7 @@ Matchmaking draws a position from the catalogue and hands the pairing to the gam
 
 The pool is built offline and published as an immutable version; nothing in live play ever calls Stockfish. An eval is a property of three things together: the position, the engine build and the search settings. Upgrading Stockfish therefore means a new pool version, never an in-place edit.
 
-1. **Generate.** Enumerate candidate positions at a configurable ply depth (four plies is a parameter, not a constant). Deduplicate by FEN so transpositions collapse into one position.
+1. **Generate.** Enumerate candidate positions at a configurable ply depth (four plies is a parameter, not a constant). Deduplicate by canonical FEN so transpositions collapse into one position: the en passant square only when an en passant capture is legal, as FIDE's repetition rule counts it, the halfmove clock set to 0, and the fullmove number taken from the ply. Positions with no legal moves are dropped, since no game can start from one. At four plies that leaves 72,074 of the 72,078 distinct positions.
 2. **Analyse.** Run a pinned Stockfish build at a fixed node count with MultiPV 3. Store the eval, the eval at a shallower search, and the gap between the best and second-best move.
 3. **Filter.**
    - Eval ceiling: drop positions beyond an absolute eval of 3, and all mate scores.
