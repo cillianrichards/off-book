@@ -44,7 +44,7 @@ Game collections the pipeline reads. Off Book publishes positions and counts der
 
 | Source | Used in | Terms | Status |
 | --- | --- | --- | --- |
-| [The Week in Chess](https://theweekinchess.com/twic) (TWIC), games since 1994 | `pipeline/` (rare positions, P1-02) | "Free for personal use only. All rights are reserved." The complete database is offered for a £30 donation by emailing the editor. | Permission to publish a pool built from it is being sought from the editor, Mark Crowther (D-16). Until then, use it only to test the pipeline. |
+| [Lichess masters database](https://lichess.org/analysis#explorer), through the opening explorer API | `pipeline/` (rare positions, P1-10) | Lichess's terms allow its services, including "API access, content, game databases", to be used "for your own personal or commercial use", within reasonable caps and without abusing the API. No separate licence covers explorer data, and the masters games were supplied to Lichess by a third party. | Read once; only positions and counts are kept. Tell Lichess before the full crawl (P1-10). |
 
 ## Not yet chosen
 
