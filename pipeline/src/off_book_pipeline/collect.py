@@ -104,6 +104,14 @@ class Candidate:
         return f"{self.fen}\t{self.ply}\t{self.games}\t{self.share!r}"
 
 
+def write_candidates(output: Path, candidates: Sequence[Candidate], report: dict[str, Any]) -> Path:
+    """Write the candidates file and its report beside it; return the report's path."""
+    output.write_text("".join(f"{c.to_line()}\n" for c in candidates), encoding="utf-8", newline="\n")
+    report_path = output.with_name(output.name + ".report.json")
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n")
+    return report_path
+
+
 class CollectRefused(Exception):
     """The collection cannot give a trustworthy set of candidates with these settings."""
 
@@ -548,13 +556,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except CollectRefused as error:
         print(f"Refused: {error}", file=sys.stderr)
         return 1
-    args.output.write_text(
-        "".join(f"{candidate.to_line()}\n" for candidate in collection.candidates),
-        encoding="utf-8",
-        newline="\n",
-    )
-    report_path = args.output.with_name(args.output.name + ".report.json")
-    report_path.write_text(json.dumps(collection.report, indent=2) + "\n", encoding="utf-8", newline="\n")
+    report_path = write_candidates(args.output, collection.candidates, collection.report)
     games, removed = collection.report["games"], collection.report["removed"]
     print(
         f"{games['accepted']:,} games counted ({games['duplicates']:,} duplicates skipped); "
