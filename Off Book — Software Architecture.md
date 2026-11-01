@@ -205,7 +205,7 @@ Build the riskiest part first. Whether a pool exists at all is the one question 
 
 **Decided (1 November 2026):** off book means the position is rare, and a game starts at the point in the opening where it leaves commonly played positions: a candidate is a rare position that at least one game reaches straight from a common one. How deep that is varies by line, so some candidates are closer to a middlegame than others, and there is no upper ply bound (D-18).
 
-**Decided (1 November 2026):** a candidate is at least four plies in, and a line that leaves common play before then gives no candidate, so an offbeat start such as 1.Na3 never does. "Common" is measured among masters games for now; widening the collection later means a new pool version.
+**Decided (1 November 2026):** a candidate is at least four plies in, and a line that leaves common play before then gives no candidate, so an offbeat start such as 1.Na3 never does. "Common" is measured among masters games for now, across all of recorded master play rather than recent decades only, so a line common in the 1960s stays common; widening the collection later means a new pool version.
 
 1. **How long before a seek widens?** Too short and nobody gets the band they asked for; too long and the second player online leaves before the first is matched.
 2. **How do you concentrate players in time?** With one time control and no engine opponents, the number of people online at the same moment decides everything. Scheduled sessions, arenas or notifications when someone is seeking are the usual levers.
