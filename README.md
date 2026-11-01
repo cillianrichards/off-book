@@ -39,9 +39,7 @@ uv run pytest
 
 The pool is analysed with Stockfish 19 (P1-01). Any build of it will do, downloaded or compiled yourself: the pipeline checks the engine's bench signature, not the file, and refuses to run on anything else. Check a build by hand with `uv run python -m off_book_pipeline.engine PATH_TO_STOCKFISH`. Set `OFF_BOOK_STOCKFISH` to the same path and `pytest` runs its engine test against the real build as well as a fake; CI builds Stockfish 19 from source for this.
 
-Generate the candidate positions (P1-02) with `uv run python -m off_book_pipeline.generate OUTPUT [--ply N]`: one canonical FEN per line, sorted, at four plies by default (72,074 positions, about ten seconds). The output is generated data, so keep it out of git.
-
-Analyse them (P1-03) with `uv run python -m off_book_pipeline.analyse CANDIDATES OUTPUT --engine PATH_TO_STOCKFISH` (or set `OFF_BOOK_STOCKFISH`). It checks the engine first, runs one Stockfish per CPU core unless `--workers` says otherwise, and appends each result to OUTPUT as JSON Lines. If it stops for any reason, run the same command again to carry on. At the default 1,000,000 and 100,000 nodes it takes about 1.8 seconds per position per core, so about 36 core-hours for the 72,074 candidates at four plies. `--nodes` and `--shallow-nodes` change the search, but only for a new OUTPUT.
+Analyse candidate positions, one FEN per line (P1-03), with `uv run python -m off_book_pipeline.analyse CANDIDATES OUTPUT --engine PATH_TO_STOCKFISH` (or set `OFF_BOOK_STOCKFISH`). It checks the engine first, runs one Stockfish per CPU core unless `--workers` says otherwise, and appends each result to OUTPUT as JSON Lines. If it stops for any reason, run the same command again to carry on. At the default 1,000,000 and 100,000 nodes it takes about two seconds per position per core. `--nodes` and `--shallow-nodes` change the search, but only for a new OUTPUT.
 
 Local database: Docker with Compose. PostgreSQL 18 runs in a container, bound to localhost, and dbmate applies the migrations in `db/migrations`.
 

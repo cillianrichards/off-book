@@ -302,7 +302,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         prog="python -m off_book_pipeline.analyse",
         description="Analyse candidate positions with the pinned Stockfish, resuming OUTPUT if it exists.",
     )
-    parser.add_argument("candidates", type=Path, help="candidates file from off_book_pipeline.generate")
+    parser.add_argument("candidates", type=Path, help="candidate positions, one FEN per line")
     parser.add_argument("output", type=Path, help="results file (JSON Lines); resumed if it exists")
     parser.add_argument("--engine", default=os.environ.get("OFF_BOOK_STOCKFISH"), help="Stockfish 19 binary")
     parser.add_argument("--workers", type=int, default=os.cpu_count() or 1, help="engines run in parallel")

@@ -28,7 +28,6 @@ from off_book_pipeline.analyse import (
     run_analysis,
 )
 from off_book_pipeline.engine import STOCKFISH_19, EnginePin
-from off_book_pipeline.generate import generate
 
 SETTINGS = SearchSettings(nodes=20_000, shallow_nodes=2_000)
 
@@ -138,10 +137,23 @@ def reset_fakes() -> None:
     FakeAnalyser.created = []
 
 
+def positions_after_one_move_each() -> list[str]:
+    """The 400 positions after White's and Black's first moves: a ready-made set of distinct FENs."""
+    board, fens = chess.Board(), []
+    for first in list(board.legal_moves):
+        board.push(first)
+        for reply in list(board.legal_moves):
+            board.push(reply)
+            fens.append(board.fen())
+            board.pop()
+        board.pop()
+    return sorted(fens)
+
+
 @pytest.fixture
 def candidates(tmp_path: Path) -> Path:
     path = tmp_path / "candidates.txt"
-    path.write_text("".join(f"{fen}\n" for fen in generate(2).candidates), encoding="utf-8")
+    path.write_text("".join(f"{fen}\n" for fen in positions_after_one_move_each()), encoding="utf-8")
     return path
 
 
