@@ -40,8 +40,8 @@ from off_book_pipeline.engine import PINNED, EnginePin, EngineRefused, verify_en
 class SearchSettings:
     """Everything besides the engine that decides a search's result. Recorded with every run."""
 
-    nodes: int = 1_000_000
-    shallow_nodes: int = 100_000
+    nodes: int = 100_000
+    shallow_nodes: int = 10_000
     multipv: int = 3
     hash_mb: int = 16
     """Stockfish's default. Part of the settings because the hash size changes what a search finds."""

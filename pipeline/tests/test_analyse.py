@@ -84,8 +84,8 @@ def test_analysis_round_trips_through_json() -> None:
 
 def test_settings_are_recorded_in_full() -> None:
     assert SearchSettings().as_dict() == {
-        "nodes": 1_000_000,
-        "shallow_nodes": 100_000,
+        "nodes": 100_000,
+        "shallow_nodes": 10_000,
         "multipv": 3,
         "hash_mb": 16,
         "threads": 1,
