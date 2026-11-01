@@ -202,6 +202,8 @@ Build the riskiest part first. Whether a pool exists at all is the one question 
 
 **Decided (31 October 2026):** no filter for positions a sensible player would not reach, for now. A position reached only by an unusual line, such as an early rook lift (1.a4 a5 2.Ra3 Ra6), stays a candidate if it passes the eval ceiling, stability and rarity filters.
 
+**Decided (1 November 2026):** a position's eval must be transparent, not precise. Players are being compensated for playing at an eval disadvantage, so what matters is that they see the eval the offset is based on, not that it is calculated to the last centipawn; the analysis node count is chosen for cost, not to chase accuracy.
+
 1. **How long before a seek widens?** Too short and nobody gets the band they asked for; too long and the second player online leaves before the first is matched.
 2. **How do you concentrate players in time?** With one time control and no engine opponents, the number of people online at the same moment decides everything. Scheduled sessions, arenas or notifications when someone is seeking are the usual levers.
 3. **Should a player's chosen band persist across pairings?** Re-posting the seek automatically after a return to the lobby saves a step, but may keep someone in a band they have just shown they dislike.
