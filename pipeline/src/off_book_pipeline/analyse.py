@@ -167,9 +167,13 @@ class RunSummary:
 
 
 def read_candidates(path: Path) -> tuple[list[str], str]:
-    """The candidate FENs, one per line, in file order without repeats, and the file's SHA-256."""
+    """The candidate FENs in file order without repeats, and the file's SHA-256.
+
+    Each line starts with a FEN. Anything after a tab, such as the ply, games and share that P1-02
+    writes, is ignored.
+    """
     data = path.read_bytes()
-    fens = [line.strip() for line in data.decode("utf-8").splitlines()]
+    fens = [line.split("\t", 1)[0].strip() for line in data.decode("utf-8").splitlines()]
     return list(dict.fromkeys(fen for fen in fens if fen)), hashlib.sha256(data).hexdigest()
 
 
@@ -302,7 +306,9 @@ def main(argv: Iterable[str] | None = None) -> int:
         prog="python -m off_book_pipeline.analyse",
         description="Analyse candidate positions with the pinned Stockfish, resuming OUTPUT if it exists.",
     )
-    parser.add_argument("candidates", type=Path, help="candidate positions, one FEN per line")
+    parser.add_argument(
+        "candidates", type=Path, help="candidates file from off_book_pipeline.collect, or one FEN per line"
+    )
     parser.add_argument("output", type=Path, help="results file (JSON Lines); resumed if it exists")
     parser.add_argument("--engine", default=os.environ.get("OFF_BOOK_STOCKFISH"), help="Stockfish 19 binary")
     parser.add_argument("--workers", type=int, default=os.cpu_count() or 1, help="engines run in parallel")

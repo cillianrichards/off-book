@@ -24,6 +24,7 @@ from off_book_pipeline.analyse import (
     StockfishAnalyser,
     analysis_from_searches,
     main,
+    read_candidates,
     read_results,
     run_analysis,
 )
@@ -178,6 +179,16 @@ def run(
 
 def analysed_fens() -> list[str]:
     return [fen for analyser in FakeAnalyser.created for fen in analyser.analysed]
+
+
+def test_the_candidates_file_may_carry_extra_columns(tmp_path: Path) -> None:
+    path = tmp_path / "candidates.tsv"
+    path.write_text(
+        "fen one w - - 0 3\t4\t2\t0.1\nfen two b - - 0 3\t5\t3\t0.15\n\nfen one w - - 0 3\n", encoding="utf-8"
+    )
+    fens, checksum = read_candidates(path)
+    assert fens == ["fen one w - - 0 3", "fen two b - - 0 3"]
+    assert checksum == hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def test_every_candidate_is_analysed_once_and_recorded(candidates: Path, tmp_path: Path) -> None:
