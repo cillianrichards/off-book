@@ -38,6 +38,14 @@ Note on the WebAssembly candidates: `stockfish` (nmrugg/stockfish.js) declares `
 - **Network source offer.** Already covered by X-07: the running app links to its exact source.
 - **Code ported from lila.** lila's front end is AGPL-3.0-or-later, like Off Book, so its code may be ported into the client. Ported files keep lila's copyright notices, and each port is recorded in this file in the commit that makes it.
 
+## Data sources
+
+Game collections the pipeline reads. Off Book publishes positions and counts derived from them, never the games.
+
+| Source | Used in | Terms | Status |
+| --- | --- | --- | --- |
+| [The Week in Chess](https://theweekinchess.com/twic) (TWIC), games since 1994 | `pipeline/` (rare positions, P1-02) | "Free for personal use only. All rights are reserved." The complete database is offered for a £30 donation by emailing the editor. | Permission to publish a pool built from it is being sought from the editor, Mark Crowther (D-16). Until then, use it only to test the pipeline. |
+
 ## Not yet chosen
 
 Recorded here when the backlog item that needs them makes the choice.

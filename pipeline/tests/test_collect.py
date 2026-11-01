@@ -22,7 +22,8 @@ from off_book_pipeline.collect import (
     main,
 )
 
-SETTINGS = CollectSettings(min_games=2, rare_below_percent="20", min_ply=4, count_plies=60)
+# The hand-made games carry no ratings, so the masters filter is off for them.
+SETTINGS = CollectSettings(min_games=2, rare_below_percent="20", min_ply=4, count_plies=60, min_rating=None)
 
 GAMES = [
     # The Spanish trunk: common to move 3, then 3.Bb5 stays common and 3...a6 / 3...Nf6 leave common play.
@@ -118,6 +119,8 @@ def test_the_report_accounts_for_every_game_and_position(collection: Collection)
         "accepted": 20,
         "duplicates": 1,
         "set_up_or_variant": 1,
+        "unrated": 0,
+        "below_min_rating": 0,
         "unreadable": 1,
         "no_moves": 1,
     }
@@ -191,7 +194,7 @@ def test_the_counting_limit_is_enforced(pgn_path: Path) -> None:
     # 1.e4 e5 is common, and the knight-shuffle game reaches it at ply 6:
     # counting only 6 plies could hide a candidate after it.
     with pytest.raises(CollectRefused, match="ply 6, at the counting limit of 6"):
-        collect([pgn_path], CollectSettings(min_games=2, rare_below_percent="20", min_ply=4, count_plies=6))
+        collect([pgn_path], CollectSettings(rare_below_percent="20", count_plies=6, min_rating=None))
 
 
 def test_compressed_and_zipped_collections_give_the_same_candidates(
@@ -235,6 +238,7 @@ def test_the_common_threshold_is_exact() -> None:
         "rare_below_percent": "0.05",
         "min_ply": 4,
         "count_plies": 60,
+        "min_rating": 2200,
     }
 
 
@@ -247,6 +251,7 @@ def test_the_common_threshold_is_exact() -> None:
         ({"min_ply": 0}, "at least 1"),
         ({"min_ply": 10, "count_plies": 10}, "beyond the minimum ply"),
         ({"count_plies": 300}, "At most 255"),
+        ({"min_rating": 0}, "must be positive"),
     ],
 )
 def test_bad_settings_are_rejected(kwargs: dict[str, object], message: str) -> None:
@@ -258,7 +263,7 @@ def test_main_writes_candidates_the_analysis_runner_reads(
     pgn_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     output = tmp_path / "candidates.tsv"
-    assert main([str(output), str(pgn_path), "--rare-below", "20"]) == 0
+    assert main([str(output), str(pgn_path), "--rare-below", "20", "--min-rating", "0"]) == 0
     lines = output.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 4
     _, ply, games, share = lines[0].split("\t")
@@ -276,3 +281,29 @@ def test_main_rejects_bad_settings(pgn_path: Path, tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as exit_info:
         main([str(tmp_path / "out.tsv"), str(pgn_path), "--min-ply", "0"])
     assert exit_info.value.code == 2
+
+
+def test_only_games_between_two_players_rated_2200_or_more_count(tmp_path: Path) -> None:
+    def rated(white: str, black: str) -> str:
+        return f'[WhiteElo "{white}"]\n[BlackElo "{black}"]\n'
+
+    path = tmp_path / "rated.pgn"
+    path.write_text(
+        pgn_game("M1", "M2", "e4 e5", headers=rated("2650", "2200"))
+        + pgn_game("M3", "M4", "d4 d5", headers=rated("2701", "2310"))
+        + pgn_game("C1", "M5", "c4 e5", headers=rated("2199", "2600"))
+        + pgn_game("U1", "M6", "Nf3 d5", headers=rated("?", "2500"))
+        + pgn_game("U2", "U3", "g3 d5", headers=rated("0", "-"))
+        + pgn_game("U4", "M7", "b3 e5"),
+        encoding="utf-8",
+    )
+    games = collect([path], CollectSettings(rare_below_percent="50")).report["games"]
+    assert (games["accepted"], games["below_min_rating"], games["unrated"]) == (2, 1, 3)
+
+
+def test_main_reports_a_collection_with_no_masters_games(
+    pgn_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The hand-made games have no ratings, so with the default filter none of them count.
+    assert main([str(tmp_path / "out.tsv"), str(pgn_path)]) == 1
+    assert "No usable games" in capsys.readouterr().err

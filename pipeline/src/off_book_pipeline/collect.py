@@ -19,8 +19,10 @@ writes each game's positions, as hashes, to a cache on disk; numpy then counts t
 `count_plies` plies of each game are counted. Lines leave common play long before that, and the run
 refuses to finish if a common position appears so late that the limit could hide a candidate.
 
-A game recorded twice in the collection (same players, date and moves) counts once. Games from a set-up
-position or another variant, games with an illegal move and games with no moves are skipped.
+Only masters games count: both players must be rated at least `min_rating` (2200, as in Lichess's masters
+database), and games without both ratings are skipped. A game recorded twice in the collection (same
+players, date and moves) counts once. Games from a set-up position or another variant, games with an
+illegal move and games with no moves are skipped.
 
 Run with `python -m off_book_pipeline.collect OUTPUT PGN [PGN ...]`.
 """
@@ -59,6 +61,8 @@ class CollectSettings:
     """A position is rare when fewer than this percentage of games reach it. A string, so it is exact."""
     min_ply: int = 4
     count_plies: int = 60
+    min_rating: int | None = 2200
+    """Both players must be rated at least this; None counts every game, rated or not."""
 
     def __post_init__(self) -> None:
         try:
@@ -75,13 +79,15 @@ class CollectSettings:
             raise ValueError("Positions must be counted beyond the minimum ply.")
         if self.count_plies > 255:
             raise ValueError("At most 255 plies per game can be counted.")
+        if self.min_rating is not None and self.min_rating < 1:
+            raise ValueError("The minimum rating must be positive, or None to count every game.")
 
     def common_from(self, games: int) -> int:
         """The fewest games that make a position common, out of `games`: rare is anything below it."""
         threshold = Decimal(self.rare_below_percent) * games / 100
         return max(1, int(threshold.to_integral_value(rounding=ROUND_CEILING)))
 
-    def as_dict(self) -> dict[str, int | str]:
+    def as_dict(self) -> dict[str, int | str | None]:
         return asdict(self)
 
 
@@ -140,6 +146,8 @@ class _Game:
     moves: list[int] = field(default_factory=list)
     unreadable: bool = False
     set_up: bool = False
+    rating: str = ""
+    """Why the ratings exclude the game: "unrated", "below", or empty if they do not."""
 
 
 class _GameReader(chess.pgn.BaseVisitor[_Game]):
@@ -148,8 +156,9 @@ class _GameReader(chess.pgn.BaseVisitor[_Game]):
     Moves after that are not parsed, only noted for spotting duplicate games, which keeps reading fast.
     """
 
-    def __init__(self, count_plies: int) -> None:
+    def __init__(self, count_plies: int, min_rating: int | None) -> None:
         self.count_plies = count_plies
+        self.min_rating = min_rating
         self.game = _Game()
 
     def begin_game(self) -> None:
@@ -164,6 +173,14 @@ class _GameReader(chess.pgn.BaseVisitor[_Game]):
         if "FEN" in headers or headers.get("SetUp") == "1" or variant not in ("", "standard", "chess"):
             self.game.set_up = True
             return chess.pgn.SKIP
+        if self.min_rating is not None:
+            ratings = [_rating(headers.get("WhiteElo")), _rating(headers.get("BlackElo"))]
+            if None in ratings:
+                self.game.rating = "unrated"
+            elif min(r for r in ratings if r is not None) < self.min_rating:
+                self.game.rating = "below"
+            if self.game.rating:
+                return chess.pgn.SKIP  # moves are not parsed for a game that will not count
         return None
 
     def begin_variation(self) -> chess.pgn.SkipType | None:
@@ -186,6 +203,15 @@ class _GameReader(chess.pgn.BaseVisitor[_Game]):
 
     def result(self) -> _Game:
         return self.game
+
+
+def _rating(value: str | None) -> int | None:
+    """A rating header as a number, or None when it is missing, unknown ("?" or "-") or zero."""
+    try:
+        rating = int((value or "").strip())
+    except ValueError:
+        return None
+    return rating if rating > 0 else None
 
 
 def _texts(path: Path) -> Iterator[TextIO]:
@@ -265,23 +291,35 @@ class _GameTally:
     accepted: int = 0
     duplicates: int = 0
     set_up_or_variant: int = 0
+    unrated: int = 0
+    below_min_rating: int = 0
     unreadable: int = 0
     no_moves: int = 0
 
 
 def _read_games(
-    sources: Sequence[Path], cache: _Cache, count_plies: int, progress: Callable[[int], None] | None
+    sources: Sequence[Path], cache: _Cache, settings: CollectSettings, progress: Callable[[int], None] | None
 ) -> _GameTally:
     tally = _GameTally()
     identities: set[int] = set()
     for source in sources:
         for text in _texts(source):
-            while (game := chess.pgn.read_game(text, Visitor=lambda: _GameReader(count_plies))) is not None:
+            while (
+                game := chess.pgn.read_game(
+                    text, Visitor=lambda: _GameReader(settings.count_plies, settings.min_rating)
+                )
+            ) is not None:
                 tally.read += 1
                 if progress is not None and tally.read % 100_000 == 0:
                     progress(tally.read)
                 if game.set_up:
                     tally.set_up_or_variant += 1
+                    continue
+                if game.rating == "unrated":
+                    tally.unrated += 1
+                    continue
+                if game.rating == "below":
+                    tally.below_min_rating += 1
                     continue
                 if game.unreadable:
                     tally.unreadable += 1
@@ -365,7 +403,7 @@ def collect(
     """Count positions across the games in `sources` and return the candidates for P1-03 to analyse."""
     with tempfile.TemporaryDirectory(dir=work_dir, prefix="off-book-collect-") as directory:
         cache = _Cache(Path(directory))
-        tally = _read_games(sources, cache, settings.count_plies, progress)
+        tally = _read_games(sources, cache, settings, progress)
         if tally.accepted == 0:
             raise CollectRefused("No usable games were found.")
         arrays = cache.arrays()
@@ -488,11 +526,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--min-ply", type=int, default=defaults.min_ply)
     parser.add_argument("--count-plies", type=int, default=defaults.count_plies)
     parser.add_argument(
+        "--min-rating", type=int, default=defaults.min_rating, help="both players; 0 counts every game"
+    )
+    parser.add_argument(
         "--work-dir", type=Path, help="where to keep the temporary cache (default: system temp)"
     )
     args = parser.parse_args(argv)
     try:
-        settings = CollectSettings(args.min_games, args.rare_below, args.min_ply, args.count_plies)
+        min_rating = args.min_rating or None
+        settings = CollectSettings(
+            args.min_games, args.rare_below, args.min_ply, args.count_plies, min_rating
+        )
     except ValueError as error:
         parser.error(str(error))
 
