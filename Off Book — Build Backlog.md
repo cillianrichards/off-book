@@ -25,15 +25,16 @@ Done when every push to `main` is checked in GitHub Actions on Linux and Windows
 
 ## Phase 1 — Pool feasibility
 
-Exit test: after the eval ceiling and stability filters, every band you intend to offer holds enough positions, split by which colour is better, that memorisation is impractical, before rarity removes any more. The threshold does not exist yet (D-06). Rarity and publishing wait for Phase 3, because they trim and ship a pool rather than decide whether one exists.
+Exit test: after the eval ceiling and stability filters, every band you intend to offer holds enough rare positions, split by which colour is better, that memorisation is impractical. The threshold does not exist yet (D-06). Publishing waits for Phase 3, because it ships a pool rather than deciding whether one exists.
 
 - [x] **P1-01 Pin Stockfish.** Stockfish 19, pinned by its source commit, bench signature and network file. Before analysing anything the pipeline runs `bench` and refuses to start if the signature differs; the binary's checksum is not checked, so any build of the release, on any platform, is accepted. All three go into `PoolVersion`. Done when the pinned build passes and an engine with a different signature is refused.
-- [x] **P1-02 Generator.** Enumerate legal lines to a configurable ply depth (default 4) and collapse transpositions to one canonical FEN: en passant only when a capture is legal, move counters normalised. Done when line counts match perft at depths 1 to 4 and a known transposition dedupes.
+- [ ] **P1-02 Rare positions from games.** Stream a PGN collection, compressed or not (masters games first; source per D-16). Count, for every position, the games that pass through it at any point: once per game however often it recurs, and once for a game that appears twice in the collection (same players, date and moves). A position is its placement, side to move, castling rights and an en passant square only when a capture is legal, so move order and counters do not matter. Candidates are positions reached by at least 2 games and by fewer than 0.05% of them, excluding positions with no legal moves; each is written with the earliest ply any game reached it at and its share of games as its rarity score. Thresholds, source and any ply range (D-18) are filter settings, and the run reports how many positions each threshold removed. Done when counts on a small hand-made collection match by hand, a transposition and a duplicate game each count once, and the starting position is never a candidate.
+- **P1-02's first version**, a generator enumerating every legal line to a set depth, was retired on 1 November 2026: candidates come from real games instead.
 - [x] **P1-03 Analysis runner.** Fixed node count, MultiPV 3, plus the shallower search; stores eval, shallow eval, best-move gap and mate flags. One thread and a fresh hash per search, parallel across positions, resumable after interruption. Done when re-running a sample gives identical evals.
-- **P1-04, P1-05 and P1-08** moved to Phase 3 as P3-01, P3-02 and P3-04.
-- [ ] **P1-06 Filters.** Eval ceiling (absolute eval above 3, and every mate score) and stability; best-move gap recorded. Every threshold is configuration stored in the filter settings, and the run reports how many positions each filter removed. Rarity joins these filters in P3-03.
-- [ ] **P1-07 Band coverage report.** Positions per band, split by which colour is better. Flags any band where the worse side is almost always the same colour. Rerun after rarity in P3-05.
-- [ ] **P1-09 Exit test.** Pass or fail per band against D-06. A failing band is dropped from launch, or the ply depth or a filter changes, before any interface work.
+- **P1-04 and P1-05** became P3-01 and P3-02, both since retired; **P1-08** moved to Phase 3 as P3-04.
+- [ ] **P1-06 Filters.** Eval ceiling (absolute eval above 3, and every mate score) and stability; best-move gap recorded. Every threshold is configuration stored in the filter settings, and the run reports how many positions each filter removed.
+- [ ] **P1-07 Band coverage report.** Positions per band, split by which colour is better. Flags any band where the worse side is almost always the same colour.
+- [ ] **P1-09 Exit test.** Pass or fail per band against D-06. A failing band is dropped from launch, or a threshold changes, before any interface work.
 
 ## Phase 2 — Playable chess
 
@@ -53,7 +54,7 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 **Rules**
 
 - [ ] **P2-03 Shared rules package.** Wraps chess.js: any starting FEN, legal moves, mate, stalemate, threefold repetition, 50-move rule, insufficient material. The same build runs in client and server.
-- [ ] **P2-04 Custom-start tests.** Repetition counts from the given FEN, castling and en passant rights come from the FEN, and Black-to-move starts work if the ply depth ever goes odd.
+- [ ] **P2-04 Custom-start tests.** Repetition counts from the given FEN, castling and en passant rights come from the FEN, and Black-to-move starts work, since positions come from games at any ply.
 
 **Game service**
 
@@ -85,15 +86,13 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 
 ## Phase 3 — Off Book play
 
-Exit test: every band intended for launch still clears D-06 after rarity, and pool v1 is published. You play both sides of an unrated 10+0 game from a pool position, through a challenge link with band and side, with reveal, redraw and abort, and the pairing survives a server restart.
+Exit test: pool v1 is published, with every band intended for launch clearing D-06. You play both sides of an unrated 10+0 game from a pool position, through a challenge link with band and side, with reveal, redraw and abort, and the pairing survives a server restart.
 
 **Pool v1**
 
-- [ ] **P3-01 Lichess database ingestion.** Streaming parser for the monthly PGN dumps. Counts canonical-FEN frequency by rating band at the starting ply and the later check plies; the months used go into the filter settings. *Needs D-16.*
-- [ ] **P3-02 Look-ahead rarity.** Decide which continuations the check a few plies on follows (engine lines or the database's own moves) and how far. Implement it against P3-01's frequency table.
-- [ ] **P3-03 Rarity filter.** Rarity at the starting ply and the look-ahead plies, added to P1-06's filters, with its thresholds in the filter settings and its removals in the run's report.
+- **P3-01, P3-02 and P3-03** (Lichess database ingestion, look-ahead rarity and the rarity filter) were retired on 1 November 2026: rarity now selects the candidates in P1-02, counted at any point in a game, with no look-ahead.
 - [ ] **P3-04 Publish pool v1.** The pipeline writes pool v1 as a file plus manifest (engine build, search and filter settings, checksum) and attaches it to a GitHub release, which is its record; an existing version's release is never replaced. A loader verifies the checksum and writes `PoolVersion` and its positions to PostgreSQL in one transaction, refusing a version already present. Done when a reset database is rebuilt from the release alone.
-- [ ] **P3-05 Pool exit test.** P1-07's report rerun after rarity, pass or fail per band against D-06. A failing band is dropped from launch, or a filter is relaxed and the pool republished as v2.
+- **P3-05** (pool exit test after rarity) was retired with them: P1-09 now tests the pool after rarity.
 
 **Pairing state machine**
 
@@ -118,7 +117,7 @@ Exit test: on Lichess 10+0 games, actual score tracks predicted score in every e
 
 - [ ] **P4-01 Offset function.** Centipawns to rating points (about 0.64 × centipawns), signed by side, then to Glicko-2's internal scale (÷ 173.7178). Unit tests: +1.00 gives about 64 points and 59%; −1.40 gives about 90 points and 37%.
 - [ ] **P4-02 Clamp.** Offset capped at the eval ceiling of 3 pawns, about 192 points.
-- [ ] **P4-03 Validation dataset.** Lichess 10+0 rated games with both ratings, the result, and the comparison position re-evaluated with the pinned engine settings. The dumps' `%eval` comments come from other engine versions and depths, so are not reused. *Needs P1-01, P1-03, P3-01, D-08.*
+- [ ] **P4-03 Validation dataset.** Lichess 10+0 rated games with both ratings, the result, and the comparison position re-evaluated with the pinned engine settings. The dumps' `%eval` comments come from other engine versions and depths, so are not reused. *Needs P1-01, P1-03, P1-02's PGN reader, D-08.*
 - [ ] **P4-04 Calibration report.** Actual against predicted score by eval bucket and rating tier, with sample sizes and confidence intervals. Built to be rerun: the monthly check (P6-02) is the same table on Off Book's own games.
 - [ ] **P4-05 Publish calibration v1.** One constant, 64 points per pawn, as calibration v1: a file committed to the repository (`calibration/v1.json`), which is its record and is never edited, loaded into `CalibrationVersion` the same way as a pool. Each game pins the version current when it starts. Done when a reset database is rebuilt from the file alone.
 - [ ] **P4-06 Calibration exit decision.** Pass, or launch with per-tier constants as v1.
@@ -211,7 +210,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 
 **Design questions**
 
-- [ ] **D-08 Calibration test data.** In a Lichess game, a +2 position was reached by someone outplaying their opponent, so the advantage is confounded with form beyond rating. Real positions at ply 4 are near level and common, the opposite of the pool. Decide what the test uses and which bias you accept.
+- [ ] **D-08 Calibration test data.** In a Lichess game, a +2 position was reached by someone outplaying their opponent, so the advantage is confounded with form beyond rating. Real positions a few moves in are near level and common, the opposite of the pool. Decide what the test uses and which bias you accept.
 - [x] **D-09 Accounts.** Decided 29 October 2026: sign in with Lichess, since most players will have an account there. Off Book keeps its own user ids and sessions, and only `Identity` refers to Lichess, so another sign-in method can be added later without touching games or ratings (P2-02).
 - [ ] **D-10 Update timing.** Rate after every game, as Lichess does, or batch into Glicko-2 rating periods.
 - [ ] **D-11 Where the offset sits.** Glicko-2 scales the rating difference by the opponent's deviation. If the offset sits inside that scaling, an uncertain opponent shrinks it, and the expected score shown before play is not the one used.
@@ -219,5 +218,6 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 - [ ] **D-13 Level band colours.** Level has no choice of side, but someone plays White and someone gets the +0.4. How are colours assigned?
 - [ ] **D-14 Concentrating players.** The doc's open question 2. With one time control and no engine opponents, this may be a launch requirement rather than Phase 6.
 - [ ] **D-15 Band persistence.** The doc's open question 3: does a chosen band re-post after a return to the lobby?
-- [ ] **D-16 Rarity definition.** Which Lichess rating bands and months define "common" for P3-01.
+- [ ] **D-16 Masters games source.** Lichess's masters database (over-the-board games, FIDE 2200+, since 1952) can be queried through the explorer but not downloaded. Free collections exist: TWIC's weekly files, PGN Mentor, and compilations of them such as Lumbra's Gigabase. Decide which, check its terms (the UK has a database right as well as copyright), and whether Lichess games join later. Needed before P1-02 runs for real.
 - [ ] **D-17 Contact details.** Whether sign-in also asks Lichess for the player's email address (the `email:read` scope). With it, accounts can be recovered if Lichess sign-in stops working suddenly, at the cost of holding personal data under X-05 and a wider permission prompt. Without it, Off Book holds nothing personal beyond the Lichess account id, but a player who has not linked another sign-in method by then is locked out. Needed by P2-02.
+- [ ] **D-18 Starting depth.** A position's share of games falls as a game goes on, so many positions ten moves into a main line are reached by fewer than 0.05% of games yet are theory a prepared player knows. With no bound, most candidates would be middlegames from known lines. Decide a ply range, or a different test for being off book, such as the move into the position being rare. Needed before P1-02 runs for real.
