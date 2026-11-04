@@ -6,6 +6,7 @@ game ids, ratings and opening names, as Lichess's do, so the tests can check non
 """
 
 import json
+import re
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -22,14 +23,20 @@ from off_book_pipeline.collect import CollectSettings, collect
 from off_book_pipeline.masters import (
     START,
     CrawlIncomplete,
-    CrawlRefused,
-    LichessExplorer,
     MoveCount,
+    Store,
+    StoreDamaged,
     candidates_from_store,
     child,
-    crawl,
-    main,
 )
+from off_book_pipeline.masters import main as candidates_main
+from off_book_pipeline.masters_crawl import (
+    CrawlRefused,
+    LichessExplorer,
+    code_version,
+    crawl,
+)
+from off_book_pipeline.masters_crawl import main as crawl_main
 
 RULE = CollectSettings(min_games=2, rare_below_percent="20", min_ply=4, min_rating=None)
 RESULTS = ["1-0", "1/2-1/2", "0-1"]
@@ -101,7 +108,7 @@ def explorer() -> FakeExplorer:
 @pytest.fixture
 def crawled(tmp_path: Path, explorer: FakeExplorer) -> Path:
     store = tmp_path / "crawl.jsonl"
-    assert crawl(store, explorer, "20").complete
+    assert crawl(store, explorer, "20", code="test-commit").complete
     return store
 
 
@@ -168,6 +175,7 @@ def test_only_counts_are_kept(crawled: Path) -> None:
         assert leaked not in text
     record = json.loads(text.splitlines()[1])
     assert set(record) == {"fen", "date", "white", "draws", "black", "moves"}
+    assert json.loads(text.splitlines()[-1])["run"]["code"] == "test-commit"
     assert record["fen"] == START
     assert record["white"] + record["draws"] + record["black"] == 20
 
@@ -321,7 +329,7 @@ def test_main_writes_candidates_from_a_store(
     crawled: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     output = tmp_path / "candidates.tsv"
-    assert main(["candidates", str(crawled), str(output), "--rare-below", "20"]) == 0
+    assert candidates_main([str(crawled), str(output), "--rare-below", "20"]) == 0
     fens, _ = read_candidates(output)
     assert len(fens) == 4
     report = json.loads((tmp_path / "candidates.tsv.report.json").read_text(encoding="utf-8"))
@@ -331,11 +339,43 @@ def test_main_writes_candidates_from_a_store(
 
 
 def test_main_refuses_a_threshold_the_store_cannot_support(crawled: Path, tmp_path: Path) -> None:
-    assert main(["candidates", str(crawled), str(tmp_path / "out.tsv"), "--rare-below", "10"]) == 1
+    assert candidates_main([str(crawled), str(tmp_path / "out.tsv"), "--rare-below", "10"]) == 1
 
 
 def test_main_needs_a_token_to_crawl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LICHESS_TOKEN", raising=False)
     with pytest.raises(SystemExit) as exit_info:
-        main(["crawl", str(tmp_path / "crawl.jsonl")])
+        crawl_main([str(tmp_path / "crawl.jsonl")])
     assert exit_info.value.code == 2
+
+
+def test_each_run_records_its_threshold_outcome_and_code(tmp_path: Path) -> None:
+    store, explorer = tmp_path / "crawl.jsonl", FakeExplorer(games_with_results())
+    crawl(store, explorer, "30", max_lookups=3, code="abc123")
+    crawl(store, explorer, "20", code="def456")
+    runs = Store(store, create=False).runs
+    assert [(r["crawl_threshold"], r["complete"], r["code"]) for r in runs] == [
+        ("30", False, "abc123"),
+        ("20", True, "def456"),
+    ]
+    assert [r["looked_up"] for r in runs] == [3, 18]
+    assert all(r["ended"] for r in runs)
+    # Run lines do not disturb the counts or the candidates.
+    assert len(candidates_from_store(store, RULE)[0]) == 4
+
+
+def test_the_candidates_report_names_the_runs_behind_it(crawled: Path) -> None:
+    _, report = candidates_from_store(crawled, RULE)
+    assert [run["code"] for run in report["source"]["runs"]] == ["test-commit"]
+
+
+def test_the_code_version_is_a_commit() -> None:
+    assert re.fullmatch(r"[0-9a-f]{40}(-dirty)?|unknown", code_version())
+
+
+def test_a_damaged_store_is_refused(crawled: Path) -> None:
+    lines = crawled.read_text(encoding="utf-8").splitlines(keepends=True)
+    lines[3] = "not json\n"
+    crawled.write_text("".join(lines), encoding="utf-8")
+    with pytest.raises(StoreDamaged, match="start a new store"):
+        candidates_from_store(crawled, RULE)
