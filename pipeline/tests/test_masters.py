@@ -300,10 +300,16 @@ def stand_in() -> Iterator[str]:
 
 def test_the_client_asks_for_every_move_and_no_top_games_and_waits_on_429(stand_in: str) -> None:
     waits: list[float] = []
+    notices: list[str] = []
     LichessStandIn.answers = [(429, {}), (429, {}), (200, {"white": 1, "draws": 2, "black": 3, "moves": []})]
-    answer = LichessExplorer("token123", url=stand_in, sleep=waits.append).lookup(START)
+    explorer = LichessExplorer("token123", url=stand_in, sleep=waits.append, notify=notices.append)
+    answer = explorer.lookup(START)
     assert answer["draws"] == 2
     assert waits == [60.0, 120.0]
+    assert notices == [
+        "Lichess asked the crawl to slow down; waiting 60 seconds before trying again.",
+        "Lichess asked the crawl to slow down; waiting 120 seconds before trying again.",
+    ]
     path, authorisation = LichessStandIn.requests[-1]
     query = parse_qs(urlparse(path).query)
     assert query == {"fen": [f"{START} 0 1"], "moves": ["256"], "topGames": ["0"]}
@@ -391,3 +397,17 @@ def test_a_damaged_store_is_refused(crawled: Path) -> None:
     crawled.write_text("".join(lines), encoding="utf-8")
     with pytest.raises(StoreDamaged, match="start a new store"):
         candidates_from_store(crawled, RULE)
+
+
+def test_stopping_with_ctrl_c_says_how_to_carry_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def interrupted(*args: object, **kwargs: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setenv("LICHESS_TOKEN", '"lip_abc"')
+    monkeypatch.setattr("off_book_pipeline.masters_crawl.crawl", interrupted)
+    assert crawl_main([str(tmp_path / "crawl.jsonl")]) == 130
+    err = capsys.readouterr().err
+    assert err.startswith("Crawling at 0.05%, one lookup at a time")
+    assert "Stopped. Everything looked up so far is saved" in err

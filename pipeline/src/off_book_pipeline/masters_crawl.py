@@ -105,8 +105,14 @@ class LichessExplorer:
         url: str = URL,
         sleep: Callable[[float], None] = time.sleep,
         timeout: float = 30.0,
+        notify: Callable[[str], None] = lambda message: None,
     ) -> None:
         self.token, self.url, self.sleep, self.timeout = token, url, sleep, timeout
+        self.notify = notify
+
+    def _wait(self, seconds: float, reason: str) -> None:
+        self.notify(f"{reason}; waiting {seconds:g} seconds before trying again.")
+        self.sleep(seconds)
 
     def lookup(self, epd: str) -> dict[str, Any]:
         # Every move played (the endpoint truncates only to the number asked for), and no top games.
@@ -132,7 +138,7 @@ class LichessExplorer:
                     retry_after = error.headers.get("Retry-After", "")
                     wait = float(retry_after) if retry_after.isdigit() else 60.0 * 2**rate_limited
                     rate_limited += 1
-                    self.sleep(min(wait, 900.0))
+                    self._wait(min(wait, 900.0), "Lichess asked the crawl to slow down")
                     continue
                 if error.code in (401, 403):
                     raise CrawlRefused(
@@ -141,7 +147,7 @@ class LichessExplorer:
                     ) from error
                 if error.code >= 500 and failures < 4:
                     failures += 1
-                    self.sleep(10.0 * 2**failures)
+                    self._wait(10.0 * 2**failures, f"Lichess had a server error (HTTP {error.code})")
                     continue
                 raise CrawlRefused(
                     f"Lichess answered HTTP {error.code}{_reason(error)} for {epd}."
@@ -149,7 +155,7 @@ class LichessExplorer:
             except (urllib.error.URLError, TimeoutError) as error:
                 if failures < 4:
                     failures += 1
-                    self.sleep(10.0 * 2**failures)
+                    self._wait(10.0 * 2**failures, f"No answer from Lichess ({error})")
                     continue
                 raise CrawlRefused(f"Cannot reach Lichess: {error}") from error
 
@@ -288,27 +294,38 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as error:
         parser.error(str(error))
 
+    def say(message: str) -> None:
+        print(message, file=sys.stderr, flush=True)
+
+    say(
+        f"Crawling at {args.crawl_threshold}%, one lookup at a time; progress every 30 seconds. "
+        "Ctrl+C stops it safely, and running the same command again carries on."
+    )
     started = time.monotonic()
+    last_report = [0.0]
 
     def report(looked_up: int, saved: int, queued: int) -> None:
-        if looked_up % 100 == 0:
-            rate = looked_up / max(time.monotonic() - started, 1e-9)
-            print(
-                f"{looked_up:,} looked up, {saved:,} saved, {queued:,} queued, {rate:.1f}/s", file=sys.stderr
-            )
+        now = time.monotonic()
+        if looked_up == 1 or now - last_report[0] >= 30:
+            last_report[0] = now
+            rate = looked_up / max(now - started, 1e-9)
+            say(f"{looked_up:,} looked up, {saved:,} saved, {queued:,} queued, {rate:.1f}/s")
 
     try:
         summary = crawl(
             args.store,
-            LichessExplorer(token),
+            LichessExplorer(token, notify=say),
             args.crawl_threshold,
             max_lookups=args.max_lookups,
             max_seconds=None if args.max_minutes is None else args.max_minutes * 60,
             progress=report,
         )
     except (CrawlRefused, StoreDamaged) as error:
-        print(f"Refused: {error}", file=sys.stderr)
+        say(f"Refused: {error}")
         return 1
+    except KeyboardInterrupt:
+        say("Stopped. Everything looked up so far is saved; run the same command to carry on.")
+        return 130
     rate = summary.looked_up / summary.seconds if summary.seconds else 0.0
     status = (
         "complete" if summary.complete else f"stopped with at least {summary.still_queued:,} still to look up"
@@ -316,7 +333,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         f"Crawl at {args.crawl_threshold}% ({summary.threshold_games:,} of {summary.total_games:,} games): "
         f"{summary.looked_up:,} looked up in {summary.seconds / 60:.1f} minutes ({rate:.2f}/s), "
-        f"{summary.positions_saved:,} saved, {summary.expanded:,} expanded; {status}."
+        f"{summary.positions_saved:,} saved, {summary.expanded:,} expanded; {status}.",
+        flush=True,
     )
     return 0
 
