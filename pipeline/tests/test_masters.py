@@ -33,6 +33,7 @@ from off_book_pipeline.masters import main as candidates_main
 from off_book_pipeline.masters_crawl import (
     CrawlRefused,
     LichessExplorer,
+    clean_token,
     code_version,
     crawl,
 )
@@ -309,10 +310,21 @@ def test_the_client_asks_for_every_move_and_no_top_games_and_waits_on_429(stand_
     assert authorisation == "Bearer token123"
 
 
-def test_the_client_reports_a_refused_token(stand_in: str) -> None:
-    LichessStandIn.answers = [(401, {})]
-    with pytest.raises(CrawlRefused, match="refused the token"):
+def test_the_client_reports_a_refused_token_with_lichesss_reason(stand_in: str) -> None:
+    LichessStandIn.answers = [(401, {"error": "No such token"})]
+    with pytest.raises(CrawlRefused, match=r"refused the token \(HTTP 401: No such token\)\. Check that"):
         LichessExplorer("bad", url=stand_in, sleep=lambda _: None).lookup(START)
+
+
+def test_the_client_reports_another_refusal_with_its_reason(stand_in: str) -> None:
+    LichessStandIn.answers = [(400, {"error": "Invalid fen"})]
+    with pytest.raises(CrawlRefused, match=r"HTTP 400: Invalid fen for "):
+        LichessExplorer("t", url=stand_in, sleep=lambda _: None).lookup(START)
+
+
+@pytest.mark.parametrize("pasted", ['"lip_abc123"', "lip_abc123\r", "  'lip_abc123' ", "lip_abc123"])
+def test_a_pasted_token_loses_quotes_and_whitespace(pasted: str) -> None:
+    assert clean_token(pasted) == "lip_abc123"
 
 
 def test_the_client_retries_a_server_error(stand_in: str) -> None:

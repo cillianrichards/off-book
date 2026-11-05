@@ -135,18 +135,42 @@ class LichessExplorer:
                     self.sleep(min(wait, 900.0))
                     continue
                 if error.code in (401, 403):
-                    raise CrawlRefused(f"Lichess refused the token (HTTP {error.code}).") from error
+                    raise CrawlRefused(
+                        f"Lichess refused the token (HTTP {error.code}{_reason(error)}). Check that "
+                        "LICHESS_TOKEN holds the whole token, starting lip_, and has not been revoked."
+                    ) from error
                 if error.code >= 500 and failures < 4:
                     failures += 1
                     self.sleep(10.0 * 2**failures)
                     continue
-                raise CrawlRefused(f"Lichess answered HTTP {error.code} for {epd}.") from error
+                raise CrawlRefused(
+                    f"Lichess answered HTTP {error.code}{_reason(error)} for {epd}."
+                ) from error
             except (urllib.error.URLError, TimeoutError) as error:
                 if failures < 4:
                     failures += 1
                     self.sleep(10.0 * 2**failures)
                     continue
                 raise CrawlRefused(f"Cannot reach Lichess: {error}") from error
+
+
+def _reason(error: urllib.error.HTTPError) -> str:
+    """Lichess's stated reason for an error answer, such as ": No such token", or nothing."""
+    try:
+        body = error.read(1000).decode("utf-8", "replace")
+    except OSError:
+        return ""
+    try:
+        reason = json.loads(body).get("error", "")
+    except (ValueError, AttributeError):
+        reason = body
+    reason = " ".join(str(reason).split())[:200]
+    return f": {reason}" if reason else ""
+
+
+def clean_token(value: str) -> str:
+    """The token as pasted, without surrounding quotes or whitespace, which shells and clipboards add."""
+    return value.strip().strip("\"'").strip()
 
 
 # Crawling
@@ -254,7 +278,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--max-minutes", type=float, help="stop after this many minutes (resume later)")
     parser.add_argument("--token-env", default="LICHESS_TOKEN", help="variable holding a Lichess API token")
     args = parser.parse_args(argv)
-    token = os.environ.get(args.token_env, "")
+    token = clean_token(os.environ.get(args.token_env, ""))
     if not token:
         parser.error(
             f"set {args.token_env} to a Lichess personal API token (lichess.org/account/oauth/token)"
