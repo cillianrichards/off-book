@@ -9,7 +9,7 @@ import json
 import re
 import threading
 from collections.abc import Iterator
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar
 from urllib.parse import parse_qs, urlparse
@@ -271,11 +271,14 @@ def test_an_answer_without_counts_is_refused(tmp_path: Path) -> None:
 
 
 class LichessStandIn(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"  # keeps connections open between requests, as Lichess does
     answers: ClassVar[list[tuple[int, dict[str, Any]]]] = []
     requests: ClassVar[list[tuple[str, str | None]]] = []
+    ports: ClassVar[list[int]] = []
 
     def do_GET(self) -> None:
         LichessStandIn.requests.append((self.path, self.headers.get("Authorization")))
+        LichessStandIn.ports.append(self.client_address[1])
         status, body = LichessStandIn.answers.pop(0)
         payload = json.dumps(body).encode()
         self.send_response(status)
@@ -290,10 +293,10 @@ class LichessStandIn(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def stand_in() -> Iterator[str]:
-    server = HTTPServer(("127.0.0.1", 0), LichessStandIn)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), LichessStandIn)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    LichessStandIn.answers, LichessStandIn.requests = [], []
+    LichessStandIn.answers, LichessStandIn.requests, LichessStandIn.ports = [], [], []
     yield f"http://127.0.0.1:{server.server_address[1]}/masters"
     server.shutdown()
 
@@ -411,3 +414,40 @@ def test_stopping_with_ctrl_c_says_how_to_carry_on(
     err = capsys.readouterr().err
     assert err.startswith("Crawling at 0.05%, one lookup at a time")
     assert "Stopped. Everything looked up so far is saved" in err
+
+
+def test_the_client_reuses_one_connection_for_every_lookup(stand_in: str) -> None:
+    answer = {"white": 1, "draws": 0, "black": 0, "moves": []}
+    LichessStandIn.answers = [(200, answer)] * 5
+    explorer = LichessExplorer("t", url=stand_in, sleep=lambda _: None)
+    try:
+        for _ in range(5):
+            explorer.lookup(START)
+    finally:
+        explorer.close()
+    assert len(LichessStandIn.ports) == 5
+    assert len(set(LichessStandIn.ports)) == 1
+
+
+def test_the_client_reconnects_at_once_when_an_idle_connection_was_closed(stand_in: str) -> None:
+    answer = {"white": 1, "draws": 0, "black": 0, "moves": []}
+    LichessStandIn.answers = [(200, answer)] * 2
+    waits: list[float] = []
+    explorer = LichessExplorer("t", url=stand_in, sleep=waits.append)
+    try:
+        explorer.lookup(START)
+        assert explorer._connection is not None
+        explorer._connection.sock.close()  # as if Lichess had dropped the idle connection
+        assert explorer.lookup(START)["white"] == 1
+    finally:
+        explorer.close()
+    assert waits == []
+    assert len(set(LichessStandIn.ports)) == 2
+
+
+def test_the_client_gives_up_when_lichess_cannot_be_reached() -> None:
+    waits: list[float] = []
+    explorer = LichessExplorer("t", url="http://127.0.0.1:9/masters", sleep=waits.append, timeout=1)
+    with pytest.raises(CrawlRefused, match="Cannot reach Lichess"):
+        explorer.lookup(START)
+    assert waits == [20.0, 40.0, 80.0, 160.0]

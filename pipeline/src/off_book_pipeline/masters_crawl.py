@@ -18,14 +18,14 @@ personal API token in `LICHESS_TOKEN`.
 """
 
 import argparse
+import http.client
 import json
 import os
+import ssl
 import subprocess
 import sys
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -94,7 +94,11 @@ class Explorer(Protocol):
 
 
 class LichessExplorer:
-    """The masters endpoint, one request at a time, waiting whenever Lichess says it is asked too often."""
+    """The masters endpoint, one request at a time, waiting whenever Lichess says it is asked too often.
+
+    One connection is opened and reused for every lookup. Opening a fresh secure connection per lookup
+    cost about 2.4 seconds each on Windows, against well under a second for Lichess's answer.
+    """
 
     URL = "https://explorer.lichess.org/masters"
 
@@ -107,69 +111,103 @@ class LichessExplorer:
         timeout: float = 30.0,
         notify: Callable[[str], None] = lambda message: None,
     ) -> None:
-        self.token, self.url, self.sleep, self.timeout = token, url, sleep, timeout
-        self.notify = notify
+        self.token, self.sleep, self.timeout, self.notify = token, sleep, timeout, notify
+        parts = urllib.parse.urlsplit(url)
+        self._https = parts.scheme == "https"
+        self._host, self._path = parts.netloc, parts.path
+        self._context = ssl.create_default_context() if self._https else None
+        self._connection: http.client.HTTPConnection | None = None
+        self._reused = False
+
+    def close(self) -> None:
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None
 
     def _wait(self, seconds: float, reason: str) -> None:
         self.notify(f"{reason}; waiting {seconds:g} seconds before trying again.")
         self.sleep(seconds)
 
+    def _get(self, target: str) -> tuple[int, str, bytes]:
+        """Status, Retry-After header and body for one GET, on the open connection if there is one."""
+        if self._connection is None:
+            if self._https:
+                self._connection = http.client.HTTPSConnection(
+                    self._host, timeout=self.timeout, context=self._context
+                )
+            else:
+                self._connection = http.client.HTTPConnection(self._host, timeout=self.timeout)
+            self._reused = False
+        try:
+            self._connection.request(
+                "GET",
+                target,
+                headers={
+                    "Authorization": f"Bearer {self.token}",
+                    "User-Agent": USER_AGENT,
+                    "Accept": "application/json",
+                },
+            )
+            response = self._connection.getresponse()
+            body = response.read()
+        except BaseException:
+            self.close()
+            raise
+        if response.will_close:
+            self.close()
+        else:
+            self._reused = True
+        return response.status, response.getheader("Retry-After") or "", body
+
     def lookup(self, epd: str) -> dict[str, Any]:
         # Every move played (the endpoint truncates only to the number asked for), and no top games.
         query = urllib.parse.urlencode({"fen": f"{epd} 0 1", "moves": 256, "topGames": 0})
-        request = urllib.request.Request(
-            f"{self.url}?{query}",
-            headers={
-                "Authorization": f"Bearer {self.token}",
-                "User-Agent": USER_AGENT,
-                "Accept": "application/json",
-            },
-        )
+        target = f"{self._path}?{query}"
         rate_limited = failures = 0
         while True:
+            reused = self._connection is not None and self._reused
             try:
-                with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    answer: dict[str, Any] = json.loads(response.read())
-                    return answer
-            except urllib.error.HTTPError as error:
-                if error.code == 429 and rate_limited < 10:
-                    # Lichess: "waiting one minute before retrying will be sufficient, but some limits may
-                    # require longer". Honour Retry-After if given, and wait longer each time it repeats.
-                    retry_after = error.headers.get("Retry-After", "")
-                    wait = float(retry_after) if retry_after.isdigit() else 60.0 * 2**rate_limited
-                    rate_limited += 1
-                    self._wait(min(wait, 900.0), "Lichess asked the crawl to slow down")
-                    continue
-                if error.code in (401, 403):
-                    raise CrawlRefused(
-                        f"Lichess refused the token (HTTP {error.code}{_reason(error)}). Check that "
-                        "LICHESS_TOKEN holds the whole token, starting lip_, and has not been revoked."
-                    ) from error
-                if error.code >= 500 and failures < 4:
-                    failures += 1
-                    self._wait(10.0 * 2**failures, f"Lichess had a server error (HTTP {error.code})")
-                    continue
-                raise CrawlRefused(
-                    f"Lichess answered HTTP {error.code}{_reason(error)} for {epd}."
-                ) from error
-            except (urllib.error.URLError, TimeoutError) as error:
+                status, retry_after, body = self._get(target)
+            except (OSError, http.client.HTTPException) as error:
+                if reused:
+                    continue  # Lichess closed an idle connection: open a new one at once
                 if failures < 4:
                     failures += 1
-                    self._wait(10.0 * 2**failures, f"No answer from Lichess ({error})")
+                    self._wait(10.0 * 2**failures, f"No answer from Lichess ({error!r})")
                     continue
-                raise CrawlRefused(f"Cannot reach Lichess: {error}") from error
+                raise CrawlRefused(f"Cannot reach Lichess: {error!r}") from error
+            if status == 200:
+                try:
+                    answer: dict[str, Any] = json.loads(body)
+                except ValueError as error:
+                    raise CrawlRefused(f"Lichess's answer for {epd} was not JSON.") from error
+                return answer
+            if status == 429 and rate_limited < 10:
+                # Lichess: "waiting one minute before retrying will be sufficient, but some limits may
+                # require longer". Honour Retry-After if given, and wait longer each time it repeats.
+                wait = float(retry_after) if retry_after.isdigit() else 60.0 * 2**rate_limited
+                rate_limited += 1
+                self._wait(min(wait, 900.0), "Lichess asked the crawl to slow down")
+                continue
+            if status in (401, 403):
+                raise CrawlRefused(
+                    f"Lichess refused the token (HTTP {status}{_reason(body)}). Check that "
+                    "LICHESS_TOKEN holds the whole token, starting lip_, and has not been revoked."
+                )
+            if status >= 500 and failures < 4:
+                failures += 1
+                self._wait(10.0 * 2**failures, f"Lichess had a server error (HTTP {status})")
+                continue
+            raise CrawlRefused(f"Lichess answered HTTP {status}{_reason(body)} for {epd}.")
 
 
-def _reason(error: urllib.error.HTTPError) -> str:
+def _reason(body: bytes) -> str:
     """Lichess's stated reason for an error answer, such as ": No such token", or nothing."""
+    text = body[:1000].decode("utf-8", "replace")
     try:
-        body = error.read(1000).decode("utf-8", "replace")
-    except OSError:
-        return ""
-    try:
-        reason = json.loads(body).get("error", "")
+        reason = json.loads(text).get("error", "")
     except (ValueError, AttributeError):
-        reason = body
+        reason = text
     reason = " ".join(str(reason).split())[:200]
     return f": {reason}" if reason else ""
 
@@ -311,10 +349,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             rate = looked_up / max(now - started, 1e-9)
             say(f"{looked_up:,} looked up, {saved:,} saved, {queued:,} queued, {rate:.1f}/s")
 
+    explorer = LichessExplorer(token, notify=say)
     try:
         summary = crawl(
             args.store,
-            LichessExplorer(token, notify=say),
+            explorer,
             args.crawl_threshold,
             max_lookups=args.max_lookups,
             max_seconds=None if args.max_minutes is None else args.max_minutes * 60,
@@ -326,6 +365,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         say("Stopped. Everything looked up so far is saved; run the same command to carry on.")
         return 130
+    finally:
+        explorer.close()
     rate = summary.looked_up / summary.seconds if summary.seconds else 0.0
     status = (
         "complete" if summary.complete else f"stopped with at least {summary.still_queued:,} still to look up"
