@@ -205,7 +205,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 
 **Numbers to set**
 
-- [ ] **D-05 Live parameters.** First-move timer, disconnection grace, seek wait before widening (the doc's open question 1), recent-position exclusion window, pair-throttle limit, lag-compensation cap, high-deviation threshold.
+- [ ] **D-05 Live parameters.** First-move timer, disconnection grace, seek wait before widening (the doc's open question 1), recent-position exclusion window, pair-throttle limit, lag-compensation cap, high-deviation threshold. Decided 8 November 2026: the lag-compensation cap and disconnection grace are lila's (P2-07, P2-10); the rest are open.
 - [ ] **D-06 Pool depth.** Minimum positions per band and colour for the Phase 1 and Phase 3 exit tests.
 - [ ] **D-07 Calibration tolerance.** Largest acceptable gap between actual and predicted score, and minimum games per cell.
 
