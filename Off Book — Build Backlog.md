@@ -55,7 +55,7 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 **Rules**
 
 - [x] **P2-03 Shared rules package.** Wraps chess.js: any starting FEN, legal moves, mate, stalemate, threefold repetition, 50-move rule, insufficient material. The same build runs in client and server. Built 8 November 2026, with endings and FEN checks following scalachess and lila. The library is type-checked without Node's types, so it uses nothing a browser lacks; it first runs in a browser with the client (P2-14).
-- [ ] **P2-04 Custom-start tests.** Repetition counts from the given FEN, castling and en passant rights come from the FEN, and Black-to-move starts work, since positions come from games at any ply.
+- [x] **P2-04 Custom-start tests.** Repetition counts from the given FEN, castling and en passant rights come from the FEN, and Black-to-move starts work, since positions come from games at any ply.
 
 **Game service**
 
