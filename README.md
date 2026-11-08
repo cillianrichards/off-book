@@ -27,9 +27,10 @@ winget install Schniz.fnm                    # Node version manager
 winget install --id=astral-sh.uv -e
 ```
 
-Then make fnm switch Node by itself: create your PowerShell profile if it does not exist, add fnm's setup line to it, and open a new PowerShell window.
+Then make fnm switch Node by itself. Windows PowerShell refuses to load a profile under its default execution policy, so allow local scripts first, then create your profile if it does not exist, add fnm's setup line to it, and open a new PowerShell window. Without that line, `fnm use` fails with "We can't find the necessary environment variables".
 
 ```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 if (-not (Test-Path $profile)) { New-Item $profile -Force }
 Add-Content $profile 'fnm env --use-on-cd | Out-String | Invoke-Expression'
 ```
