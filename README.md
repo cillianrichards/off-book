@@ -113,6 +113,12 @@ pnpm db:reset            # wipe it and start again, empty and migrated
 docker compose down      # stop it, keeping its data
 ```
 
+The server's PostgreSQL tests (the game store, P2-12) run against this database, touching only rows they create; `pnpm test` skips them unless the variable is set:
+
+```sh
+OFF_BOOK_TEST_DATABASE_URL=postgres://off_book:off_book@127.0.0.1:5432/off_book pnpm --filter @off-book/server test:postgres
+```
+
 The schema changes only through migrations. Add one with `docker compose run --rm migrate new <name>`; it lands in `db/migrations`. Migrations are forward-only: never edit or roll back one that has been pushed; fix a mistake with a new migration.
 
 Every local database is disposable: published pools and calibrations are files loaded into it, never kept only there.

@@ -11,10 +11,12 @@ import {
   newClock,
   outOfTime,
   remainingAt,
+  restoredClock,
   start,
   step,
   stop,
 } from './clock.ts';
+import type { GameRecord } from './store.ts';
 
 export type GameStatus = 'started' | 'finished' | 'aborted';
 export type Result = '1-0' | '0-1' | '1/2-1/2';
@@ -124,7 +126,7 @@ export class LiveGame {
     this.#chess = chess;
     this.clock = clock;
     this.createdAt = createdAt;
-    this.#firstMover = chess.turn;
+    this.#firstMover = chess.startFen.split(' ')[1] === 'b' ? 'black' : 'white';
     this.#clock = newClock(clock, chess.turn);
   }
 
@@ -145,6 +147,49 @@ export class LiveGame {
     if (!chess.ok) return chess;
     const players = { white: input.white, black: input.black };
     return { ok: true, game: new LiveGame(input.id, players, chess.game, input.clock, input.now) };
+  }
+
+  /**
+   * Rebuilds a saved game (P2-08) by replaying its moves from the starting FEN. A record that will not
+   * replay is corrupt, and throws.
+   */
+  static restore(record: GameRecord): LiveGame {
+    const chess = ChessGame.replay(record.initialFen, record.moves);
+    const players = { white: record.players.white, black: record.players.black };
+    const game = new LiveGame(record.id, players, chess, record.clock, record.createdAt);
+    game.#clock = restoredClock(
+      record.clock,
+      chess.turn,
+      record.remaining,
+      record.clockRunningSince ?? undefined,
+    );
+    game.#clockHistory.white.push(...record.clockHistory.white);
+    game.#clockHistory.black.push(...record.clockHistory.black);
+    game.#lastMoveAt = record.lastMoveAt ?? undefined;
+    game.#finishedAt = record.finishedAt ?? undefined;
+    game.#ending = endingOf(record);
+    return game;
+  }
+
+  /** The game as it should be saved now. */
+  toRecord(): GameRecord {
+    const ending = this.#ending;
+    return {
+      id: this.id,
+      players: this.players,
+      initialFen: this.#chess.startFen,
+      clock: this.clock,
+      status: this.status,
+      moves: this.#chess.moves,
+      clockHistory: this.clockHistory,
+      remaining: { ...this.#clock.remaining },
+      clockRunningSince: this.#clock.runningSince ?? null,
+      result: ending?.status === 'finished' ? ending.result : null,
+      termination: ending?.termination ?? null,
+      createdAt: this.createdAt,
+      lastMoveAt: this.#lastMoveAt ?? null,
+      finishedAt: this.#finishedAt ?? null,
+    };
   }
 
   get status(): GameStatus {
@@ -292,6 +337,15 @@ export class LiveGame {
     this.#finishedAt = now;
     return ending;
   }
+}
+
+function endingOf(record: GameRecord): Ending | undefined {
+  if (record.status === 'started') return undefined;
+  if (record.status === 'aborted') return { status: 'aborted', termination: 'aborted' };
+  if (record.result === null || record.termination === null) {
+    throw new Error(`Game ${record.id} is finished but has no result or termination`);
+  }
+  return { status: 'finished', result: record.result, termination: record.termination };
 }
 
 function parseUci(uci: string): MoveIntent | undefined {

@@ -2,7 +2,7 @@
 # Checks the local database (P0-04): `pnpm db:check`, after `pnpm db:up` or `pnpm db:reset`.
 #
 # - every migration is applied, and rolling back is refused (migrations are forward-only);
-# - the pool and calibration tables exist and are empty;
+# - the pool and calibration tables exist and are empty, and the game table exists;
 # - their rows can be inserted but never updated, deleted or truncated.
 #
 # Nothing it does persists: every write is rolled back. It reaches the database through Docker Compose,
@@ -57,6 +57,13 @@ for table in pool_version position calibration_version; do
   count=$(sql -c "select count(*) from $table" 2>/dev/null || echo missing)
   if [[ "$count" == 0 ]]; then pass "$table exists and is empty"; else fail "$table exists and is empty (got: $count)"; fi
 done
+
+# Games (P2-12) are live data, not versions: the table must exist, and may hold rows.
+if sql -c 'select count(*) from game' >/dev/null 2>&1; then
+  pass 'game exists'
+else
+  fail 'game exists'
+fi
 
 if sql >/dev/null <<<"begin; $fixtures rollback;"; then
   pass 'rows can be inserted'

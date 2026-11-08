@@ -7,14 +7,17 @@
   "scripts": {
     "start": "node src/main.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test \"src/**/*.test.ts\""
+    "test": "node --test \"src/**/*.test.ts\"",
+    "test:postgres": "node --test \"src/**/*.postgres.test.ts\""
   },
   "dependencies": {
     "@off-book/rules": "workspace:*",
+    "pg": "8.23.1",
     "ws": "8.22.1"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pg": "8.23.1",
     "@types/ws": "8.18.2",
     "typescript": "catalog:"
   }

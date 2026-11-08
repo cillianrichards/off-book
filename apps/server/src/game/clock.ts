@@ -62,6 +62,19 @@ export function newClock(settings: ClockSettings, turn: Colour): ClockState {
   };
 }
 
+/**
+ * A clock rebuilt from a saved game (P2-08). The lag quota starts afresh, as lila's does when it reloads a
+ * game; a running clock carries on from when it started, so time spent while the server was down counts.
+ */
+export function restoredClock(
+  settings: ClockSettings,
+  turn: Colour,
+  remaining: Readonly<Record<Colour, number>>,
+  runningSince: number | undefined,
+): ClockState {
+  return { ...newClock(settings, turn), remaining: { ...remaining }, runningSince };
+}
+
 export const isRunning = (clock: ClockState): boolean => clock.runningSince !== undefined;
 
 /** Starts the side to move's clock, if it is not already running. */

@@ -265,3 +265,55 @@ describe('clocks (P2-07)', () => {
     });
   });
 });
+
+describe('saving and restoring (P2-08)', () => {
+  const at = (seconds: number) => NOW + seconds * 1000;
+  const playedTo = (game: LiveGame): LiveGame => {
+    game.move('white', { ply: 0, uci: 'e2e4' }, at(1));
+    game.move('black', { ply: 1, uci: 'c7c5' }, at(2));
+    game.move('white', { ply: 2, uci: 'g1f3' }, at(10));
+    game.move('black', { ply: 3, uci: 'd7d6' }, at(25));
+    return game;
+  };
+
+  test('a game in play comes back exactly, and play goes on', () => {
+    const game = playedTo(newGame());
+    const record = game.toRecord();
+    const restored = LiveGame.restore(record);
+    assert.deepEqual(restored.toRecord(), record);
+    assert.deepEqual(restored.view(at(40)), game.view(at(40)));
+    assert.equal(restored.move('white', { ply: 4, uci: 'd2d4' }, at(41)).kind, 'moved');
+  });
+
+  test('a running clock keeps running from when it started, so time away counts', () => {
+    const restored = LiveGame.restore(playedTo(newGame()).toRecord());
+    // White's clock started at 25 s with 59,200 cs left; at 125 s it has used another 100 s.
+    assert.equal(restored.clockAt(at(125)).white, 59_200 - 10_000);
+  });
+
+  test('a finished or aborted game comes back over', () => {
+    const finished = newGame();
+    play(finished, ['f2f3', 'e7e5', 'g2g4', 'd8h4']);
+    assert.deepEqual(LiveGame.restore(finished.toRecord()).ending, {
+      status: 'finished',
+      result: '0-1',
+      termination: 'checkmate',
+    });
+    const aborted = newGame();
+    aborted.abort('white', NOW);
+    assert.equal(LiveGame.restore(aborted.toRecord()).status, 'aborted');
+  });
+
+  test('a Black-to-move start still knows Black moved first', () => {
+    const game = newGame('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1');
+    play(game, ['e7e5']);
+    const restored = LiveGame.restore(game.toRecord());
+    assert.equal(restored.abort('black', NOW), undefined);
+    assert.ok(restored.abort('white', NOW));
+  });
+
+  test('a record whose moves will not replay is corrupt, and throws', () => {
+    const record = playedTo(newGame()).toRecord();
+    assert.throws(() => LiveGame.restore({ ...record, moves: ['e4', 'e4'] }), /not legal/);
+  });
+});
