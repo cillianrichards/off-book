@@ -3,11 +3,12 @@ import { describe, test } from 'node:test';
 
 import { STANDARD_FEN } from '@off-book/rules';
 
+import { Bus } from '../bus.ts';
 import { silentLog } from '../log.ts';
 import { FakeSocket } from '../testing/fake-socket.ts';
 import { FakeTime } from '../testing/fake-time.ts';
 import { MemoryGameStore } from '../testing/memory-store.ts';
-import { GameService } from './index.ts';
+import { type GameEvent, GameService } from './index.ts';
 
 // Time stands still in these tests, so neither clock moves.
 const FULL_CLOCKS = { white: 60_000, black: 60_000, running: false };
@@ -15,6 +16,8 @@ const FULL_CLOCKS = { white: 60_000, black: 60_000, running: false };
 interface Table {
   readonly service: GameService;
   readonly store: MemoryGameStore;
+  /** Every event published, in order. */
+  readonly events: GameEvent[];
   readonly time: FakeTime;
   readonly id: string;
   readonly white: FakeSocket;
@@ -30,7 +33,12 @@ interface Table {
 /** A game with both players connected and their opening state messages already taken. */
 async function table(initialFen = STANDARD_FEN, store = new MemoryGameStore()): Promise<Table> {
   const time = new FakeTime();
-  const service = new GameService({ time, log: silentLog, store });
+  const bus = new Bus<GameEvent>(silentLog);
+  const events: GameEvent[] = [];
+  for (const type of ['game.started', 'game.finished', 'game.aborted'] as const) {
+    bus.subscribe(type, event => events.push(event));
+  }
+  const service = new GameService({ time, log: silentLog, store, bus });
   const created = await service.create({
     white: 'alice',
     black: 'bob',
@@ -57,7 +65,7 @@ async function table(initialFen = STANDARD_FEN, store = new MemoryGameStore()): 
     await says(colour === 'white' ? 'alice' : 'bob', socket);
     return socket;
   };
-  return { service, store, time, id: created.id, ...sockets, whiteSays, blackSays, leaves, returns };
+  return { service, store, events, time, id: created.id, ...sockets, whiteSays, blackSays, leaves, returns };
 }
 
 describe('moves (P2-06)', () => {
@@ -139,7 +147,12 @@ describe('join', () => {
   });
 
   test('refuses to create an invalid game', async () => {
-    const service = new GameService({ time: new FakeTime(), log: silentLog, store: new MemoryGameStore() });
+    const service = new GameService({
+      time: new FakeTime(),
+      log: silentLog,
+      store: new MemoryGameStore(),
+      bus: new Bus(silentLog),
+    });
     const created = await service.create({
       white: 'a',
       black: 'b',
@@ -268,7 +281,7 @@ describe('restarting (P2-08)', () => {
   }
 
   const restarted = async (store: MemoryGameStore, time: FakeTime) => {
-    const service = new GameService({ time, log: silentLog, store });
+    const service = new GameService({ time, log: silentLog, store, bus: new Bus(silentLog) });
     await service.resume();
     return service;
   };
@@ -453,5 +466,109 @@ describe('abandonment (P2-10)', () => {
     time.advance(GONE_MS);
     whiteSays({ t: 'claim', outcome: 'win' });
     assert.deepEqual(white.take(), [{ t: 'rejected', reason: 'notClaimable', ply: 1 }]);
+  });
+});
+
+describe('game events (P2-11)', () => {
+  /** A service whose listener notes, for each event, what the store held when the event arrived. */
+  async function watched() {
+    const store = new MemoryGameStore();
+    const time = new FakeTime();
+    const bus = new Bus<GameEvent>(silentLog);
+    const heard: { type: string; savedStatus: string | undefined }[] = [];
+    for (const type of ['game.started', 'game.finished', 'game.aborted'] as const) {
+      bus.subscribe(type, event => heard.push({ type, savedStatus: store.saved(event.gameId)?.status }));
+    }
+    const service = new GameService({ time, log: silentLog, store, bus });
+    const created = await service.create({
+      white: 'alice',
+      black: 'bob',
+      initialFen: STANDARD_FEN,
+      clock: { initialSeconds: 600, incrementSeconds: 0 },
+    });
+    assert.ok(created.ok);
+    const seat = async (user: string) => {
+      const joined = await service.join(created.id, user);
+      assert.ok(joined.ok);
+      const connection = joined.attach(new FakeSocket());
+      return (message: unknown) => connection.receive(JSON.stringify(message));
+    };
+    return {
+      service,
+      store,
+      time,
+      heard,
+      id: created.id,
+      white: await seat('alice'),
+      black: await seat('bob'),
+    };
+  }
+
+  test('a new game is announced once it is saved', async () => {
+    const { heard } = await watched();
+    assert.deepEqual(heard, [{ type: 'game.started', savedStatus: 'started' }]);
+  });
+
+  test('a finished game is announced once its result is saved, with what rating will need', async () => {
+    const { events, service, whiteSays, blackSays, id } = await table();
+    for (const [ply, uci] of ['f2f3', 'e7e5', 'g2g4', 'd8h4'].entries()) {
+      (ply % 2 === 0 ? whiteSays : blackSays)({ t: 'move', ply, uci });
+    }
+    assert.deepEqual(
+      events.map(event => event.type),
+      ['game.started'],
+      'not before the result is saved',
+    );
+    await service.settled();
+    const finished = events[1];
+    assert.equal(finished?.type, 'game.finished');
+    assert.deepEqual(finished?.type === 'game.finished' && finished, {
+      type: 'game.finished',
+      gameId: id,
+      players: { white: 'alice', black: 'bob' },
+      result: '0-1',
+      termination: 'checkmate',
+      moveCount: 4,
+      clock: {
+        remaining: { white: 60_000, black: 60_000 },
+        history: { white: [60_000, 60_000], black: [60_000, 60_000] },
+      },
+      positionId: null,
+      at: finished.at,
+    });
+  });
+
+  test('the listener finds the result already saved', async () => {
+    const { service, heard, white } = await watched();
+    white({ t: 'abort' });
+    await service.settled();
+    assert.deepEqual(heard[1], { type: 'game.aborted', savedStatus: 'aborted' });
+  });
+
+  test('if the save fails, the announcement waits for the retry that succeeds', async () => {
+    const { service, store, time, heard, white } = await watched();
+    store.failing = true;
+    white({ t: 'abort' });
+    await service.settled();
+    assert.equal(heard.length, 1);
+    store.failing = false;
+    time.advance(30_000);
+    await service.settled();
+    assert.deepEqual(heard[1], { type: 'game.aborted', savedStatus: 'aborted' });
+    time.advance(30_000);
+    await service.settled();
+    assert.equal(heard.length, 2, 'announced once');
+  });
+
+  test('a crash before the result is saved loses the announcement, as on Lichess', async () => {
+    const { service, store, time, heard, white } = await watched();
+    store.failing = true;
+    white({ t: 'abort' });
+    await service.settled();
+    service.halt();
+    store.failing = false;
+    time.advance(60_000);
+    await service.settled();
+    assert.equal(heard.length, 1);
   });
 });

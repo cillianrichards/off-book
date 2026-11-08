@@ -7,7 +7,8 @@
 
 import pg from 'pg';
 
-import { GameService, PostgresGameStore } from './game/index.ts';
+import { Bus } from './bus.ts';
+import { type GameEvent, GameService, PostgresGameStore } from './game/index.ts';
 import { errorFields, jsonLog as log } from './log.ts';
 import { type Authenticate, startServer } from './server.ts';
 import { realTime } from './time.ts';
@@ -37,6 +38,8 @@ export async function run(options: RunOptions): Promise<void> {
     time: realTime,
     log,
     store: new PostgresGameStore(pool),
+    // Nothing listens yet: rating (Phase 4) and fair play (Phase 5) will.
+    bus: new Bus<GameEvent>(log),
     ...(options.saveDelayMs === undefined ? {} : { saveDelayMs: options.saveDelayMs }),
   });
   await games.resume();

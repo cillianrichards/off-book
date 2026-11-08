@@ -6,6 +6,7 @@ import type { Colour } from '@off-book/rules';
 
 import { errorFields, type Log } from '../log.ts';
 import type { Time, Timer } from '../time.ts';
+import type { GameBus, GameEvent } from './events.ts';
 import { newGameId } from './ids.ts';
 import { type ClockSettings, type Ending, type GameView, LiveGame } from './live-game.ts';
 import {
@@ -47,6 +48,8 @@ export interface GameServiceOptions {
   readonly time: Time;
   readonly log: Log;
   readonly store: GameStore;
+  /** Where games announce that they started, finished or were aborted (P2-11). */
+  readonly bus: GameBus;
   /** How long a move may wait to be saved, unless the game's status changes first (P2-08). */
   readonly saveDelayMs?: number;
 }
@@ -62,6 +65,8 @@ interface Entry {
   saveTimer?: Timer;
   /** Every save of this game, chained so that each writes a later state than the one before. */
   saving: Promise<void>;
+  /** Events to publish once the state they describe is saved (P2-11). */
+  readonly unpublished: GameEvent[];
 }
 
 // D-01: a move is saved within 30 seconds, the delay lila's GameProxy uses.
@@ -78,6 +83,7 @@ export class GameService {
   readonly #time: Time;
   readonly #log: Log;
   readonly #store: GameStore;
+  readonly #bus: GameBus;
   readonly #saveDelayMs: number;
   readonly #games = new Map<string, Entry>();
   readonly #startedAt: number;
@@ -87,6 +93,7 @@ export class GameService {
     this.#time = options.time;
     this.#log = options.log;
     this.#store = options.store;
+    this.#bus = options.bus;
     this.#saveDelayMs = options.saveDelayMs ?? SAVE_DELAY_MS;
     this.#startedAt = this.#time.now();
   }
@@ -121,6 +128,9 @@ export class GameService {
       if ((await this.#store.insert(game.toRecord())) === 'duplicateId') continue;
       this.#add(game);
       this.#log.info('game created', { game: game.id });
+      const { id, players, clock } = game;
+      const initialFen = game.view(game.createdAt).initialFen;
+      this.#bus.publish({ type: 'game.started', gameId: id, players, initialFen, clock, at: game.createdAt });
       return { ok: true, id: game.id };
     }
     throw new Error('Could not find an unused game id');
@@ -189,6 +199,7 @@ export class GameService {
       sockets: { white: new Set(), black: new Set() },
       offlineSince: { white: now, black: now },
       saving: Promise.resolve(),
+      unpublished: [],
     };
     this.#games.set(game.id, entry);
     return entry;
@@ -290,10 +301,30 @@ export class GameService {
     return justRestarted ? game.abortAfterRestart(now) : game.flag(now);
   }
 
+  // As lila's finisher: the result is saved, then (from Phase 4) the game is rated, then the end is
+  // announced (D-03). The players are told at once.
   #finish(entry: Entry, ending: Ending): void {
+    const { game } = entry;
+    const now = this.#time.now();
     entry.flagCheck?.cancel();
-    this.#log.info('game ended', { game: entry.game.id, ...ending });
-    this.#broadcast(entry, { t: 'end', ...ending, clock: entry.game.clockAt(this.#time.now()) });
+    this.#log.info('game ended', { game: game.id, ...ending });
+    const clock = game.clockAt(now);
+    this.#broadcast(entry, { t: 'end', ...ending, clock });
+    entry.unpublished.push(
+      ending.status === 'aborted'
+        ? { type: 'game.aborted', gameId: game.id, at: now }
+        : {
+            type: 'game.finished',
+            gameId: game.id,
+            players: game.players,
+            result: ending.result,
+            termination: ending.termination,
+            moveCount: game.ply,
+            clock: { remaining: { white: clock.white, black: clock.black }, history: game.clockHistory },
+            positionId: null,
+            at: now,
+          },
+    );
     void this.#save(entry).then(() => this.#forgetIfDone(entry));
   }
 
@@ -307,13 +338,18 @@ export class GameService {
     entry.saveTimer?.cancel();
     entry.saveTimer = undefined;
     const record = entry.game.toRecord();
+    const events = entry.unpublished.splice(0);
     entry.saving = entry.saving.then(async () => {
       try {
         await this.#store.update(record);
       } catch (error) {
         this.#log.error('saving a game failed; retrying', { game: record.id, ...errorFields(error) });
+        // The events wait for the retry, which saves this state or a later one.
+        entry.unpublished.unshift(...events);
         if (!this.#stopping) this.#saveSoon(entry);
+        return;
       }
+      for (const event of events) this.#bus.publish(event);
     });
     return entry.saving;
   }
@@ -321,7 +357,8 @@ export class GameService {
   // A game that is over and that nobody is watching leaves memory; it can be loaded again if wanted.
   #forgetIfDone(entry: Entry): void {
     const watched = entry.sockets.white.size + entry.sockets.black.size > 0;
-    if (entry.game.status !== 'started' && !watched && entry.saveTimer === undefined) {
+    const waiting = entry.saveTimer !== undefined || entry.unpublished.length > 0;
+    if (entry.game.status !== 'started' && !watched && !waiting) {
       this.#games.delete(entry.game.id);
     }
   }

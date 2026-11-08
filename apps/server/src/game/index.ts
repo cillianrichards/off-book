@@ -1,5 +1,6 @@
 // The game module: live games, their moves and clocks. Other modules use it only through this file.
 
+export type { GameBus, GameEvent } from './events.ts';
 export { GAME_ID } from './ids.ts';
 export type {
   ClockReading,

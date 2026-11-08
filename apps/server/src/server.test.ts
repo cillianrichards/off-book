@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test';
 
 import { STANDARD_FEN } from '@off-book/rules';
 
+import { Bus } from './bus.ts';
 import { GameService } from './game/index.ts';
 import { silentLog } from './log.ts';
 import { type RunningServer, startServer } from './server.ts';
@@ -17,7 +18,12 @@ let gameId: string;
 let base: string;
 
 before(async () => {
-  games = new GameService({ time: realTime, log: silentLog, store: new MemoryGameStore() });
+  games = new GameService({
+    time: realTime,
+    log: silentLog,
+    store: new MemoryGameStore(),
+    bus: new Bus(silentLog),
+  });
   server = await startServer({ port: 0, host: '127.0.0.1', games, authenticate, log: silentLog });
   base = `127.0.0.1:${server.port}`;
   const created = await games.create({
@@ -165,7 +171,12 @@ describe('WebSocket', () => {
   });
 
   test('closing the server tells clients it is restarting', async () => {
-    const own = new GameService({ time: realTime, log: silentLog, store: new MemoryGameStore() });
+    const own = new GameService({
+      time: realTime,
+      log: silentLog,
+      store: new MemoryGameStore(),
+      bus: new Bus(silentLog),
+    });
     const created = await own.create({
       white: 'a',
       black: 'b',
