@@ -6,6 +6,7 @@ import { STANDARD_FEN } from '@off-book/rules';
 import { silentLog } from '../log.ts';
 import { FakeSocket } from '../testing/fake-socket.ts';
 import { FakeTime } from '../testing/fake-time.ts';
+import { MemoryGameStore } from '../testing/memory-store.ts';
 import { GameService } from './index.ts';
 
 // Time stands still in these tests, so neither clock moves.
@@ -13,6 +14,7 @@ const FULL_CLOCKS = { white: 60_000, black: 60_000, running: false };
 
 interface Table {
   readonly service: GameService;
+  readonly store: MemoryGameStore;
   readonly time: FakeTime;
   readonly id: string;
   readonly white: FakeSocket;
@@ -22,9 +24,9 @@ interface Table {
 }
 
 /** A game with both players connected and their opening state messages already taken. */
-async function table(initialFen = STANDARD_FEN): Promise<Table> {
+async function table(initialFen = STANDARD_FEN, store = new MemoryGameStore()): Promise<Table> {
   const time = new FakeTime();
-  const service = new GameService({ time, log: silentLog });
+  const service = new GameService({ time, log: silentLog, store });
   const created = await service.create({
     white: 'alice',
     black: 'bob',
@@ -42,7 +44,7 @@ async function table(initialFen = STANDARD_FEN): Promise<Table> {
   };
   const whiteSays = await says('alice', sockets.white);
   const blackSays = await says('bob', sockets.black);
-  return { service, time, id: created.id, ...sockets, whiteSays, blackSays };
+  return { service, store, time, id: created.id, ...sockets, whiteSays, blackSays };
 }
 
 describe('moves (P2-06)', () => {
@@ -124,7 +126,7 @@ describe('join', () => {
   });
 
   test('refuses to create an invalid game', async () => {
-    const service = new GameService({ time: new FakeTime(), log: silentLog });
+    const service = new GameService({ time: new FakeTime(), log: silentLog, store: new MemoryGameStore() });
     const created = await service.create({
       white: 'a',
       black: 'b',
@@ -176,5 +178,168 @@ describe('flags found by the server (P2-07)', () => {
       (ply % 2 === 0 ? whiteSays : blackSays)({ t: 'move', ply, uci });
     }
     assert.equal(time.pending, 0);
+  });
+});
+
+describe('saving (P2-08)', () => {
+  test('a new game is saved at once', async () => {
+    const { store, id } = await table();
+    assert.equal(store.saved(id)?.status, 'started');
+    assert.deepEqual(store.saved(id)?.moves, []);
+  });
+
+  test('each side’s first move is saved at once, later moves within 30 seconds of the first unsaved one', async () => {
+    const { service, store, time, id, whiteSays, blackSays } = await table();
+    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await service.settled();
+    assert.deepEqual(store.saved(id)?.moves, ['e4']);
+    blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    await service.settled();
+    assert.deepEqual(store.saved(id)?.moves, ['e4', 'e5']);
+
+    whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
+    time.advance(20_000);
+    blackSays({ t: 'move', ply: 3, uci: 'b8c6' });
+    time.advance(9_999);
+    await service.settled();
+    assert.deepEqual(store.saved(id)?.moves, ['e4', 'e5'], 'nothing saved before the delay');
+    time.advance(1);
+    await service.settled();
+    assert.deepEqual(
+      store.saved(id)?.moves,
+      ['e4', 'e5', 'Nf3', 'Nc6'],
+      'a later move does not put the save off',
+    );
+  });
+
+  test('the end of a game is saved at once', async () => {
+    const { service, store, id, whiteSays, blackSays } = await table();
+    whiteSays({ t: 'move', ply: 0, uci: 'f2f3' });
+    blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    whiteSays({ t: 'move', ply: 2, uci: 'g2g4' });
+    blackSays({ t: 'move', ply: 3, uci: 'd8h4' });
+    await service.settled();
+    const saved = store.saved(id);
+    assert.equal(saved?.status, 'finished');
+    assert.equal(saved?.result, '0-1');
+    assert.equal(saved?.termination, 'checkmate');
+    assert.equal(saved?.moves.length, 4);
+  });
+
+  test('a failed save is retried', async () => {
+    const { service, store, time, id, whiteSays } = await table();
+    store.failing = true;
+    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await service.settled();
+    assert.deepEqual(store.saved(id)?.moves, []);
+    store.failing = false;
+    time.advance(30_000);
+    await service.settled();
+    assert.deepEqual(store.saved(id)?.moves, ['e4']);
+  });
+});
+
+describe('restarting (P2-08)', () => {
+  /** A game four plies in, White to move with the clock running since 25 seconds in. */
+  async function underway() {
+    const setup = await table();
+    const { time, whiteSays, blackSays } = setup;
+    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    blackSays({ t: 'move', ply: 1, uci: 'c7c5' });
+    time.advance(10_000);
+    whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
+    time.advance(15_000);
+    blackSays({ t: 'move', ply: 3, uci: 'd7d6' });
+    await setup.service.settled();
+    return setup;
+  }
+
+  const restarted = async (store: MemoryGameStore, time: FakeTime) => {
+    const service = new GameService({ time, log: silentLog, store });
+    await service.resume();
+    return service;
+  };
+
+  const stateFor = async (service: GameService, id: string, user = 'alice') => {
+    const joined = await service.join(id, user);
+    assert.ok(joined.ok);
+    const socket = new FakeSocket();
+    joined.attach(socket);
+    const [state] = socket.of('state');
+    assert.ok(state);
+    return { state, socket };
+  };
+
+  test('after a crash, a game resumes from its last save, losing the moves still waiting', async () => {
+    const { service, store, time, id } = await underway();
+    service.halt();
+    const after = await restarted(store, time);
+    const { state } = await stateFor(after, id);
+    assert.deepEqual(state.game.moves, ['e4', 'c5']);
+    assert.equal(state.game.turn, 'white');
+  });
+
+  test('after a crash, the time the server was down still runs on the clock', async () => {
+    const { service, store, time, id } = await underway();
+    time.advance(30_000);
+    await service.settled();
+    service.halt();
+    time.advance(60_000);
+    const after = await restarted(store, time);
+    const { state } = await stateFor(after, id);
+    // White's clock started 25 seconds in with 59,000 cs left; 90 seconds have passed since.
+    assert.equal(state.game.clock.white, 59_000 - 9_000);
+    assert.equal(state.game.clock.running, true);
+  });
+
+  test('a clean shutdown saves every game, giving the side to move 20 seconds and the other 10', async () => {
+    const { service, store, time, id, white, whiteSays } = await underway();
+    await service.shutdown();
+    const saved = store.saved(id);
+    assert.deepEqual(saved?.moves, ['e4', 'c5', 'Nf3', 'd6']);
+    assert.deepEqual(saved?.remaining, { white: 59_000 + 2000, black: 58_500 + 1000 });
+    assert.notEqual(saved?.clockRunningSince, null, 'the clock is saved running, so time away counts');
+
+    white.take();
+    whiteSays({ t: 'move', ply: 4, uci: 'd2d4' });
+    assert.deepEqual(white.take(), [{ t: 'rejected', reason: 'restarting' }]);
+
+    time.advance(5_000);
+    const after = await restarted(store, time);
+    const { state } = await stateFor(after, id);
+    assert.equal(state.game.clock.white, 61_000 - 500);
+    assert.equal(state.game.clock.black, 59_500);
+  });
+
+  test('a game whose clock ran out while the server was down is aborted just after the restart', async () => {
+    const { service, store, time, id } = await underway();
+    await service.shutdown();
+    time.advance(700_000);
+    await restarted(store, time);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(store.saved(id)?.status, 'aborted');
+  });
+
+  test('once the server has been up two minutes, running out of time is a loss again', async () => {
+    const { service, store, time, id } = await underway();
+    await service.shutdown();
+    time.advance(100_000);
+    const after = await restarted(store, time);
+    // White had 610 seconds with the allowance; 100 have gone, so the flag falls 510 seconds after restart.
+    time.advance(510_000 + 2_000);
+    await after.settled();
+    assert.equal(store.saved(id)?.termination, 'flag');
+    assert.equal(store.saved(id)?.result, '0-1');
+  });
+
+  test('a finished game can still be joined after it has left memory', async () => {
+    const { service, store, id, whiteSays } = await table();
+    whiteSays({ t: 'abort' });
+    await service.settled();
+    const after = await restarted(store, new FakeTime());
+    const { state } = await stateFor(after, id, 'bob');
+    assert.equal(state.game.status, 'aborted');
+    assert.equal((await after.view(id))?.status, 'aborted');
+    assert.equal(await after.view('ZZZZZZZZ'), undefined);
   });
 });

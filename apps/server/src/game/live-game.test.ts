@@ -220,37 +220,44 @@ describe('clocks (P2-07)', () => {
   test('a move arriving after its player ran out of time is not played, and loses on time', () => {
     const game = newGame();
     play(game, ['e2e4', 'e7e5']);
-    assert.deepEqual(game.move('white', { ply: 2, uci: 'g1f3' }, at(601)), {
-      kind: 'flagged',
-      ending: { status: 'finished', result: '0-1', termination: 'flag' },
-    });
+    assert.deepEqual(game.move('white', { ply: 2, uci: 'g1f3' }, at(601)), { kind: 'flagged' });
     assert.equal(game.ply, 2);
+    assert.deepEqual(game.flag(at(601)), { status: 'finished', result: '0-1', termination: 'flag' });
     assert.deepEqual(game.clockAt(at(700)), { white: 0, black: 60_000, running: false });
   });
 
-  test('the server’s check flags the side to move only after the grace', () => {
+  test('the side to move is out of time only after the grace', () => {
     const game = newGame();
     play(game, ['e2e4', 'e7e5']);
     // White's quota starts at 3 seconds, so the grace is the 2-second maximum.
     assert.equal(game.flagCheckDueAt, at(602));
-    assert.equal(game.flagIfOutOfTime(at(601.99)), undefined);
-    assert.deepEqual(game.flagIfOutOfTime(at(602)), {
-      status: 'finished',
-      result: '0-1',
-      termination: 'flag',
-    });
+    assert.equal(game.isOutOfTime(at(601.99)), false);
+    assert.equal(game.isOutOfTime(at(602)), true);
+    game.flag(at(602));
     assert.equal(game.flagCheckDueAt, undefined);
+    assert.equal(game.isOutOfTime(at(700)), false, 'a finished game is not out of time');
   });
 
   test('a flag against a side that cannot mate is a draw', () => {
     // White has king and queen, Black king and knight, which cannot mate a queen.
     const game = newGame('7k/8/6Q1/8/3K4/8/1n6/8 w - - 0 1');
     play(game, ['d4e4', 'b2d1']);
-    assert.deepEqual(game.flagIfOutOfTime(at(602)), {
-      status: 'finished',
-      result: '1/2-1/2',
-      termination: 'flag',
-    });
+    assert.deepEqual(game.flag(at(602)), { status: 'finished', result: '1/2-1/2', termination: 'flag' });
+  });
+
+  test('time can be given to either side', () => {
+    const game = newGame();
+    play(game, ['e2e4', 'e7e5']);
+    game.giveTime('white', 2000);
+    game.giveTime('black', 1000);
+    assert.deepEqual(game.clockAt(at(10)), { white: 61_000, black: 61_000, running: true });
+  });
+
+  test('a game can be aborted after a restart, whoever has moved', () => {
+    const game = newGame();
+    play(game, ['e2e4', 'e7e5', 'g1f3']);
+    assert.deepEqual(game.abortAfterRestart(at(700)), { status: 'aborted', termination: 'aborted' });
+    assert.equal(game.clockAt(at(800)).running, false);
   });
 
   test('the view counts the running clock down', () => {

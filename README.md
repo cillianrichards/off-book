@@ -113,7 +113,9 @@ pnpm db:reset            # wipe it and start again, empty and migrated
 docker compose down      # stop it, keeping its data
 ```
 
-The server's PostgreSQL tests (the game store, P2-12) run against this database, touching only rows they create; `pnpm test` skips them unless the variable is set:
+The live server saves games in this database. Start it with `pnpm --filter @off-book/server start` once `DATABASE_URL` is set (the same as in `.env`; Node does not read `.env` itself); it reloads any game left in play, and Ctrl+C stops it cleanly, saving every game first. Nobody can sign in to play until P2-02.
+
+The server's PostgreSQL tests (the game store, and restarting the server process mid-game, P2-08 and P2-12) run against this database, touching only rows they create; `pnpm test` skips them unless the variable is set:
 
 ```sh
 OFF_BOOK_TEST_DATABASE_URL=postgres://off_book:off_book@127.0.0.1:5432/off_book pnpm --filter @off-book/server test:postgres

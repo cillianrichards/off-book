@@ -7,6 +7,7 @@ import {
   type ClockState,
   centisOfMillis,
   flagDueAt,
+  giveTime,
   isRunning,
   newClock,
   outOfTime,
@@ -59,8 +60,11 @@ export type MoveOutcome =
       readonly clock: ClockReading;
       readonly ending?: Ending;
     }
-  /** The mover's time had run out before the move arrived: it is not played, and they lose on time. */
-  | { readonly kind: 'flagged'; readonly ending: Ending }
+  /**
+   * The mover's time had run out before the move arrived: it is not played, and the game is over on
+   * time. The caller ends it, with `flag` or, just after a restart, `abortAfterRestart`.
+   */
+  | { readonly kind: 'flagged' }
   /** The same move again for a ply already played by this player: a resend, which changes nothing. */
   | { readonly kind: 'duplicate'; readonly ply: number }
   | { readonly kind: 'rejected'; readonly reason: 'gameOver' | 'stale' | 'notYourTurn' | 'illegal' };
@@ -233,10 +237,38 @@ export class LiveGame {
     return this.#ending === undefined ? flagDueAt(this.#clock) : undefined;
   }
 
-  /** Ends the game if the side to move is out of time, allowing grace for a move on its way. */
-  flagIfOutOfTime(now: number): Ending | undefined {
-    if (this.#ending !== undefined || !outOfTime(this.#clock, this.turn, now, true)) return undefined;
-    return this.#flag(now);
+  /** Whether the side to move is out of time, allowing grace for a move on its way (P2-07). */
+  isOutOfTime(now: number): boolean {
+    return this.#ending === undefined && outOfTime(this.#clock, this.turn, now, true);
+  }
+
+  /**
+   * The side to move has run out of time. They lose, unless their opponent could never have mated, as
+   * lila's finisher decides: a flag against insufficient material is a draw.
+   */
+  flag(now: number): Ending {
+    const winner: Colour = this.turn === 'white' ? 'black' : 'white';
+    const result: Result = this.#chess.opponentHasInsufficientMaterial
+      ? '1/2-1/2'
+      : winner === 'white'
+        ? '1-0'
+        : '0-1';
+    const remaining = { ...this.#clock.remaining, [this.turn]: 0 };
+    this.#clock = { ...this.#clock, remaining, runningSince: undefined };
+    return this.#end({ status: 'finished', result, termination: 'flag' }, now);
+  }
+
+  /**
+   * Aborts a game whose clock ran out because the server was down, as lila's finisher does for a flag
+   * soon after a restart when the last move came before it (P2-08).
+   */
+  abortAfterRestart(now: number): Ending {
+    return this.#end({ status: 'aborted', termination: 'aborted' }, now);
+  }
+
+  /** Adds time to a side's clock, as a clean shutdown does (P2-08). */
+  giveTime(colour: Colour, cs: number): void {
+    this.#clock = giveTime(this.#clock, colour, cs);
   }
 
   colourOf(userId: string): Colour | undefined {
@@ -271,7 +303,7 @@ export class LiveGame {
 
     // Timed on receipt: a move that arrives after its player's time ran out is not played (P2-07).
     const lagCs = proposed.lagMs === undefined ? undefined : centisOfMillis(proposed.lagMs);
-    if (step(this.#clock, now, lagCs, true).flagged) return { kind: 'flagged', ending: this.#flag(now) };
+    if (step(this.#clock, now, lagCs, true).flagged) return { kind: 'flagged' };
 
     const played = this.#chess.play(intent);
     if (!played.ok) throw new Error(`${proposed.uci} was legal but could not be played`);
@@ -315,20 +347,6 @@ export class LiveGame {
 
   #moverOf(ply: number): Colour {
     return ply % 2 === 0 ? this.#firstMover : this.#firstMover === 'white' ? 'black' : 'white';
-  }
-
-  // The side to move has run out of time. They lose, unless their opponent could never have mated, as
-  // lila's finisher decides: a flag against insufficient material is a draw.
-  #flag(now: number): Ending {
-    const winner: Colour = this.turn === 'white' ? 'black' : 'white';
-    const result: Result = this.#chess.opponentHasInsufficientMaterial
-      ? '1/2-1/2'
-      : winner === 'white'
-        ? '1-0'
-        : '0-1';
-    const remaining = { ...this.#clock.remaining, [this.turn]: 0 };
-    this.#clock = { ...this.#clock, remaining, runningSince: undefined };
-    return this.#end({ status: 'finished', result, termination: 'flag' }, now);
   }
 
   #end(ending: Ending, now: number): Ending {

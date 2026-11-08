@@ -7,13 +7,9 @@ import { GameService } from './game/index.ts';
 import { silentLog } from './log.ts';
 import { type RunningServer, startServer } from './server.ts';
 import { openClient, type TestClient } from './testing/client.ts';
+import { MemoryGameStore } from './testing/memory-store.ts';
+import { testAuthenticate as authenticate } from './testing/test-auth.ts';
 import { realTime } from './time.ts';
-
-// Tests identify themselves with a header; the live server has no such authenticator.
-const authenticate = async (request: { headers: Record<string, string | string[] | undefined> }) => {
-  const user = request.headers['x-test-user'];
-  return typeof user === 'string' ? user : undefined;
-};
 
 let server: RunningServer;
 let games: GameService;
@@ -21,7 +17,7 @@ let gameId: string;
 let base: string;
 
 before(async () => {
-  games = new GameService({ time: realTime, log: silentLog });
+  games = new GameService({ time: realTime, log: silentLog, store: new MemoryGameStore() });
   server = await startServer({ port: 0, host: '127.0.0.1', games, authenticate, log: silentLog });
   base = `127.0.0.1:${server.port}`;
   const created = await games.create({
@@ -138,7 +134,7 @@ describe('WebSocket', () => {
   });
 
   test('closing the server tells clients it is restarting', async () => {
-    const own = new GameService({ time: realTime, log: silentLog });
+    const own = new GameService({ time: realTime, log: silentLog, store: new MemoryGameStore() });
     const created = await own.create({
       white: 'a',
       black: 'b',

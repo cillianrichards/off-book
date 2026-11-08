@@ -14,7 +14,15 @@ export type ClientMessage =
   | { readonly t: 'move'; readonly ply: number; readonly uci: string; readonly lag?: number }
   | { readonly t: 'abort' };
 
-export type Rejection = 'badMessage' | 'gameOver' | 'stale' | 'notYourTurn' | 'illegal' | 'notAllowed';
+export type Rejection =
+  | 'badMessage'
+  | 'gameOver'
+  | 'stale'
+  | 'notYourTurn'
+  | 'illegal'
+  | 'notAllowed'
+  /** The server is shutting down cleanly; the client should reconnect and resend (P2-08). */
+  | 'restarting';
 
 export type ServerMessage =
   | { readonly t: 'state'; readonly you: Colour; readonly game: GameView }
