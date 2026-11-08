@@ -3,6 +3,9 @@ packages:
   - packages/*
   - tools/*
 
+# `pnpm install` refuses a Node outside the range in package.json's `engines` (P0-06).
+engineStrict: true
+
 # One version of each shared dependency across the workspace.
 # Every entry is listed with its licence in THIRD_PARTY_LICENCES.md.
 catalog:

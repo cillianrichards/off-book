@@ -14,6 +14,61 @@ An open-source chess app in which every game starts from a pre-played position, 
 
 The design is in `Off Book — Software Architecture.md` and the work plan in `Off Book — Build Backlog.md`.
 
+## Setting up
+
+You need Git, Docker with Compose, Node.js 24, pnpm and uv. Install them for your system, then follow "Then, on every system" below. Python needs no separate install: uv fetches 3.13 itself.
+
+**Windows** (PowerShell; Windows 11 or a recent Windows 10, with `winget`)
+
+```powershell
+winget install -e --id Git.Git               # Git Bash is needed for `pnpm db:check`
+winget install -e --id Docker.DockerDesktop  # use the WSL 2 backend; `wsl --install` first if WSL is absent
+winget install Schniz.fnm                    # Node version manager
+winget install --id=astral-sh.uv -e
+```
+
+Then make fnm switch Node by itself: create your PowerShell profile if it does not exist, add fnm's setup line to it, and open a new PowerShell window.
+
+```powershell
+if (-not (Test-Path $profile)) { New-Item $profile -Force }
+Add-Content $profile 'fnm env --use-on-cd | Out-String | Invoke-Expression'
+```
+
+pnpm needs Node, so on Windows it is installed in the steps below, once fnm has provided Node.
+
+**macOS**
+
+```sh
+brew install fnm uv
+brew install --cask docker                   # Docker Desktop
+curl -fsSL https://get.pnpm.io/install.sh | sh -
+```
+
+**Linux**
+
+```sh
+curl -fsSL https://fnm.vercel.app/install | bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -fsSL https://get.pnpm.io/install.sh | sh -
+```
+
+Install Docker Engine with the Compose plugin from Docker's documentation for your distribution.
+
+On macOS and Linux, add `eval "$(fnm env --use-on-cd)"` to `~/.zshrc` or `~/.bashrc`, then open a new terminal.
+
+**Then, on every system**
+
+```sh
+git clone https://github.com/cillianrichards/off-book.git
+cd off-book
+fnm install          # reads the version from .nvmrc
+fnm use
+npm install -g pnpm  # Windows only; macOS and Linux installed pnpm above
+pnpm install
+```
+
+`package.json` pins the pnpm version, and pnpm fetches that version itself, so any recent pnpm will do to start. `engineStrict` makes `pnpm install` stop with `ERR_PNPM_UNSUPPORTED_ENGINE` if Node is not 24 or later: run `fnm use` and try again. The checks are under "Development" below and need nothing more, except the database ones, which need Docker running.
+
 ## Development
 
 TypeScript workspace: Node.js 24 and pnpm (version pinned in `package.json`).
