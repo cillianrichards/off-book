@@ -257,12 +257,16 @@ export class GameService {
         else if (outcome.kind === 'flagged') this.#finish(entry, this.#timeRanOut(entry, now));
         else {
           const { ply, san, uci, fen, clock } = outcome;
-          this.#broadcast(entry, { t: 'move', ply, san, uci, fen, clock });
-          if (outcome.ending !== undefined) this.#finish(entry, outcome.ending);
-          else {
-            // Each side's first move is a status change and is saved at once (D-01); later moves wait.
-            if (game.ply <= 2) void this.#save(entry);
-            else this.#saveSoon(entry);
+          const played: ServerMessage = { t: 'move', ply, san, uci, fen, clock };
+          if (outcome.ending !== undefined) this.#finish(entry, outcome.ending, played);
+          else if (game.ply <= 2) {
+            // Each side's first move is a status change (D-01): as lila does, it is saved before either
+            // player hears of it, so a first move a player has seen is never lost to a crash.
+            void this.#save(entry).then(() => this.#broadcast(entry, played));
+            this.#scheduleFlagCheck(entry);
+          } else {
+            this.#broadcast(entry, played);
+            this.#saveSoon(entry);
             this.#scheduleFlagCheck(entry);
           }
         }
@@ -302,14 +306,13 @@ export class GameService {
   }
 
   // As lila's finisher: the result is saved, then (from Phase 4) the game is rated, then the end is
-  // announced (D-03). The players are told at once.
-  #finish(entry: Entry, ending: Ending): void {
+  // announced (D-03), and only then are the players told, with the move that ended it if there was one.
+  #finish(entry: Entry, ending: Ending, lastMove?: ServerMessage): void {
     const { game } = entry;
     const now = this.#time.now();
     entry.flagCheck?.cancel();
     this.#log.info('game ended', { game: game.id, ...ending });
     const clock = game.clockAt(now);
-    this.#broadcast(entry, { t: 'end', ...ending, clock });
     entry.unpublished.push(
       ending.status === 'aborted'
         ? { type: 'game.aborted', gameId: game.id, at: now }
@@ -325,7 +328,11 @@ export class GameService {
             at: now,
           },
     );
-    void this.#save(entry).then(() => this.#forgetIfDone(entry));
+    void this.#save(entry).then(() => {
+      if (lastMove !== undefined) this.#broadcast(entry, lastMove);
+      this.#broadcast(entry, { t: 'end', ...ending, clock });
+      this.#forgetIfDone(entry);
+    });
   }
 
   // Moves are saved within the delay of the first one not yet saved, so a crash loses at most that much.
@@ -333,7 +340,10 @@ export class GameService {
     entry.saveTimer ??= this.#time.after(this.#saveDelayMs, () => void this.#save(entry));
   }
 
-  /** Saves the game as it stands now, after any save already under way. A failed save is retried. */
+  /**
+   * Saves the game as it stands now, after any save already under way. A failed save is retried later;
+   * the returned promise settles either way, so the players are still told and play goes on.
+   */
   #save(entry: Entry): Promise<void> {
     entry.saveTimer?.cancel();
     entry.saveTimer = undefined;

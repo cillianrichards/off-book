@@ -8,7 +8,7 @@ import { silentLog } from '../log.ts';
 import { FakeSocket } from '../testing/fake-socket.ts';
 import { FakeTime } from '../testing/fake-time.ts';
 import { MemoryGameStore } from '../testing/memory-store.ts';
-import { type GameEvent, GameService } from './index.ts';
+import { type GameEvent, GameService, type ServerMessage } from './index.ts';
 
 // Time stands still in these tests, so neither clock moves.
 const FULL_CLOCKS = { white: 60_000, black: 60_000, running: false };
@@ -22,8 +22,9 @@ interface Table {
   readonly id: string;
   readonly white: FakeSocket;
   readonly black: FakeSocket;
-  readonly whiteSays: (message: unknown) => void;
-  readonly blackSays: (message: unknown) => void;
+  /** Sends a message as a player, and waits for the service to finish any save it starts. */
+  readonly whiteSays: (message: unknown) => Promise<void>;
+  readonly blackSays: (message: unknown) => Promise<void>;
   /** Closes a player's socket, as a dropped connection does. */
   readonly leaves: (colour: 'white' | 'black') => void;
   /** Connects a player again on a new socket, returning it. */
@@ -52,7 +53,10 @@ async function table(initialFen = STANDARD_FEN, store = new MemoryGameStore()): 
     assert.ok(joined.ok);
     const connection = joined.attach(socket);
     connections.set(socket, connection);
-    return (message: unknown) => connection.receive(JSON.stringify(message));
+    return async (message: unknown) => {
+      connection.receive(JSON.stringify(message));
+      await service.settled();
+    };
   };
   const connections = new Map<FakeSocket, { closed(): void }>();
   const whiteSays = await says('alice', sockets.white);
@@ -71,7 +75,7 @@ async function table(initialFen = STANDARD_FEN, store = new MemoryGameStore()): 
 describe('moves (P2-06)', () => {
   test('a move is sent to both players', async () => {
     const { white, black, whiteSays } = await table();
-    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
     const expected = {
       t: 'move',
       ply: 0,
@@ -86,40 +90,40 @@ describe('moves (P2-06)', () => {
 
   test('an illegal or out-of-turn move is refused to its sender only', async () => {
     const { white, black, whiteSays, blackSays } = await table();
-    blackSays({ t: 'move', ply: 0, uci: 'e7e5' });
-    whiteSays({ t: 'move', ply: 0, uci: 'e2e5' });
+    await blackSays({ t: 'move', ply: 0, uci: 'e7e5' });
+    await whiteSays({ t: 'move', ply: 0, uci: 'e2e5' });
     assert.deepEqual(black.take(), [{ t: 'rejected', reason: 'notYourTurn', ply: 0 }]);
     assert.deepEqual(white.take(), [{ t: 'rejected', reason: 'illegal', ply: 0 }]);
   });
 
   test('a resent move is acknowledged without being played again', async () => {
     const { white, black, whiteSays } = await table();
-    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
     white.take();
     black.take();
-    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
     assert.deepEqual(white.take(), [{ t: 'ack', ply: 0 }]);
     assert.deepEqual(black.take(), []);
   });
 
   test('a stale move is refused with the current ply', async () => {
     const { white, whiteSays } = await table();
-    whiteSays({ t: 'move', ply: 2, uci: 'e2e4' });
+    await whiteSays({ t: 'move', ply: 2, uci: 'e2e4' });
     assert.deepEqual(white.take(), [{ t: 'rejected', reason: 'stale', ply: 0 }]);
   });
 
   test('checkmate ends the game for both players', async () => {
     const { service, id, white, black, whiteSays, blackSays } = await table();
-    whiteSays({ t: 'move', ply: 0, uci: 'f2f3' });
-    blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
-    whiteSays({ t: 'move', ply: 2, uci: 'g2g4' });
-    blackSays({ t: 'move', ply: 3, uci: 'd8h4' });
+    await whiteSays({ t: 'move', ply: 0, uci: 'f2f3' });
+    await blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    await whiteSays({ t: 'move', ply: 2, uci: 'g2g4' });
+    await blackSays({ t: 'move', ply: 3, uci: 'd8h4' });
     const end = { t: 'end', status: 'finished', result: '0-1', termination: 'checkmate', clock: FULL_CLOCKS };
     assert.deepEqual(white.of('end'), [end]);
     assert.deepEqual(black.of('end'), [end]);
     assert.equal((await service.view(id))?.status, 'finished');
     white.take();
-    whiteSays({ t: 'move', ply: 4, uci: 'e1f2' });
+    await whiteSays({ t: 'move', ply: 4, uci: 'e1f2' });
     assert.deepEqual(white.take(), [{ t: 'rejected', reason: 'gameOver', ply: 4 }]);
   });
 });
@@ -127,12 +131,12 @@ describe('moves (P2-06)', () => {
 describe('abort', () => {
   test('a player who has not moved may abort, ending the game for both', async () => {
     const { white, black, whiteSays, blackSays } = await table();
-    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
     white.take();
     black.take();
-    whiteSays({ t: 'abort' });
+    await whiteSays({ t: 'abort' });
     assert.deepEqual(white.take(), [{ t: 'rejected', reason: 'notAllowed', ply: 1 }]);
-    blackSays({ t: 'abort' });
+    await blackSays({ t: 'abort' });
     const end = { t: 'end', status: 'aborted', termination: 'aborted', clock: FULL_CLOCKS };
     assert.deepEqual(white.take(), [end]);
     assert.deepEqual(black.take(), [end]);
@@ -165,14 +169,15 @@ describe('join', () => {
 
 describe('flags found by the server (P2-07)', () => {
   test('ends the game when the side to move runs out, grace included', async () => {
-    const { time, white, black, whiteSays, blackSays } = await table();
-    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
-    blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    const { service, time, white, black, whiteSays, blackSays } = await table();
+    await whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
     white.take();
     black.take();
     time.advance(601_999);
     assert.deepEqual(white.take(), []);
     time.advance(1);
+    await service.settled();
     const end = {
       t: 'end',
       status: 'finished',
@@ -186,22 +191,23 @@ describe('flags found by the server (P2-07)', () => {
   });
 
   test('a move in time moves the check on to the other side', async () => {
-    const { time, white, whiteSays, blackSays } = await table();
-    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
-    blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    const { service, time, white, whiteSays, blackSays } = await table();
+    await whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
     time.advance(300_000);
-    whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
+    await whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
     white.take();
     time.advance(601_999);
     assert.deepEqual(white.of('end'), []);
     time.advance(1);
+    await service.settled();
     assert.equal(white.of('end')[0]?.result, '1-0');
   });
 
   test('no check is left waiting once a game ends some other way', async () => {
     const { time, whiteSays, blackSays } = await table();
     for (const [ply, uci] of ['f2f3', 'e7e5', 'g2g4', 'd8h4'].entries()) {
-      (ply % 2 === 0 ? whiteSays : blackSays)({ t: 'move', ply, uci });
+      await (ply % 2 === 0 ? whiteSays : blackSays)({ t: 'move', ply, uci });
     }
     assert.equal(time.pending, 0);
   });
@@ -216,16 +222,16 @@ describe('saving (P2-08)', () => {
 
   test('each side’s first move is saved at once, later moves within 30 seconds of the first unsaved one', async () => {
     const { service, store, time, id, whiteSays, blackSays } = await table();
-    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
     await service.settled();
     assert.deepEqual(store.saved(id)?.moves, ['e4']);
-    blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    await blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
     await service.settled();
     assert.deepEqual(store.saved(id)?.moves, ['e4', 'e5']);
 
-    whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
+    await whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
     time.advance(20_000);
-    blackSays({ t: 'move', ply: 3, uci: 'b8c6' });
+    await blackSays({ t: 'move', ply: 3, uci: 'b8c6' });
     time.advance(9_999);
     await service.settled();
     assert.deepEqual(store.saved(id)?.moves, ['e4', 'e5'], 'nothing saved before the delay');
@@ -240,10 +246,10 @@ describe('saving (P2-08)', () => {
 
   test('the end of a game is saved at once', async () => {
     const { service, store, id, whiteSays, blackSays } = await table();
-    whiteSays({ t: 'move', ply: 0, uci: 'f2f3' });
-    blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
-    whiteSays({ t: 'move', ply: 2, uci: 'g2g4' });
-    blackSays({ t: 'move', ply: 3, uci: 'd8h4' });
+    await whiteSays({ t: 'move', ply: 0, uci: 'f2f3' });
+    await blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    await whiteSays({ t: 'move', ply: 2, uci: 'g2g4' });
+    await blackSays({ t: 'move', ply: 3, uci: 'd8h4' });
     await service.settled();
     const saved = store.saved(id);
     assert.equal(saved?.status, 'finished');
@@ -255,7 +261,7 @@ describe('saving (P2-08)', () => {
   test('a failed save is retried', async () => {
     const { service, store, time, id, whiteSays } = await table();
     store.failing = true;
-    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
     await service.settled();
     assert.deepEqual(store.saved(id)?.moves, []);
     store.failing = false;
@@ -270,12 +276,12 @@ describe('restarting (P2-08)', () => {
   async function underway() {
     const setup = await table();
     const { time, whiteSays, blackSays } = setup;
-    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
-    blackSays({ t: 'move', ply: 1, uci: 'c7c5' });
+    await whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await blackSays({ t: 'move', ply: 1, uci: 'c7c5' });
     time.advance(10_000);
-    whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
+    await whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
     time.advance(15_000);
-    blackSays({ t: 'move', ply: 3, uci: 'd7d6' });
+    await blackSays({ t: 'move', ply: 3, uci: 'd7d6' });
     await setup.service.settled();
     return setup;
   }
@@ -327,7 +333,7 @@ describe('restarting (P2-08)', () => {
     assert.notEqual(saved?.clockRunningSince, null, 'the clock is saved running, so time away counts');
 
     white.take();
-    whiteSays({ t: 'move', ply: 4, uci: 'd2d4' });
+    await whiteSays({ t: 'move', ply: 4, uci: 'd2d4' });
     assert.deepEqual(white.take(), [{ t: 'rejected', reason: 'restarting' }]);
 
     time.advance(5_000);
@@ -360,7 +366,7 @@ describe('restarting (P2-08)', () => {
 
   test('a finished game can still be joined after it has left memory', async () => {
     const { service, store, id, whiteSays } = await table();
-    whiteSays({ t: 'abort' });
+    await whiteSays({ t: 'abort' });
     await service.settled();
     const after = await restarted(store, new FakeTime());
     const { state } = await stateFor(after, id, 'bob');
@@ -373,10 +379,10 @@ describe('restarting (P2-08)', () => {
 describe('reconnecting (P2-09)', () => {
   test('a client that asks is sent the whole game again', async () => {
     const { white, whiteSays, blackSays } = await table();
-    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
-    blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    await whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
     white.take();
-    whiteSays({ t: 'resync' });
+    await whiteSays({ t: 'resync' });
     const [state] = white.take();
     assert.equal(state?.t, 'state');
     assert.deepEqual(state?.t === 'state' && state.game.moves, ['e4', 'e5']);
@@ -390,9 +396,9 @@ describe('abandonment (P2-10)', () => {
 
   async function underway() {
     const setup = await table();
-    setup.whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
-    setup.blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
-    setup.whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
+    await setup.whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await setup.blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    await setup.whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
     setup.white.take();
     setup.black.take();
     return setup;
@@ -420,10 +426,10 @@ describe('abandonment (P2-10)', () => {
     leaves('black');
     white.take();
     time.advance(GONE_MS - 1);
-    whiteSays({ t: 'claim', outcome: 'win' });
+    await whiteSays({ t: 'claim', outcome: 'win' });
     assert.deepEqual(white.take(), [{ t: 'rejected', reason: 'notClaimable', ply: 3 }]);
     time.advance(1);
-    whiteSays({ t: 'claim', outcome: 'win' });
+    await whiteSays({ t: 'claim', outcome: 'win' });
     const [end] = white.of('end');
     assert.deepEqual(end && { status: end.status, result: end.result, termination: end.termination }, {
       status: 'finished',
@@ -438,7 +444,7 @@ describe('abandonment (P2-10)', () => {
     const { time, white, whiteSays, leaves } = await underway();
     leaves('black');
     time.advance(GONE_MS);
-    whiteSays({ t: 'claim', outcome: 'draw' });
+    await whiteSays({ t: 'claim', outcome: 'draw' });
     assert.equal(white.of('end')[0]?.result, '1/2-1/2');
   });
 
@@ -447,24 +453,24 @@ describe('abandonment (P2-10)', () => {
     leaves('white');
     black.take();
     time.advance(GONE_MS);
-    blackSays({ t: 'claim', outcome: 'win' });
+    await blackSays({ t: 'claim', outcome: 'win' });
     assert.deepEqual(black.take(), [{ t: 'rejected', reason: 'notClaimable', ply: 3 }]);
   });
 
   test('not while the opponent is connected', async () => {
     const { time, white, whiteSays } = await underway();
     time.advance(GONE_MS * 2);
-    whiteSays({ t: 'claim', outcome: 'win' });
+    await whiteSays({ t: 'claim', outcome: 'win' });
     assert.deepEqual(white.of('rejected'), [{ t: 'rejected', reason: 'notClaimable', ply: 3 }]);
   });
 
   test('and not before both sides have moved', async () => {
     const { time, white, whiteSays, leaves } = await table();
-    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
     leaves('black');
     white.take();
     time.advance(GONE_MS);
-    whiteSays({ t: 'claim', outcome: 'win' });
+    await whiteSays({ t: 'claim', outcome: 'win' });
     assert.deepEqual(white.take(), [{ t: 'rejected', reason: 'notClaimable', ply: 1 }]);
   });
 });
@@ -512,13 +518,8 @@ describe('game events (P2-11)', () => {
   test('a finished game is announced once its result is saved, with what rating will need', async () => {
     const { events, service, whiteSays, blackSays, id } = await table();
     for (const [ply, uci] of ['f2f3', 'e7e5', 'g2g4', 'd8h4'].entries()) {
-      (ply % 2 === 0 ? whiteSays : blackSays)({ t: 'move', ply, uci });
+      await (ply % 2 === 0 ? whiteSays : blackSays)({ t: 'move', ply, uci });
     }
-    assert.deepEqual(
-      events.map(event => event.type),
-      ['game.started'],
-      'not before the result is saved',
-    );
     await service.settled();
     const finished = events[1];
     assert.equal(finished?.type, 'game.finished');
@@ -570,5 +571,50 @@ describe('game events (P2-11)', () => {
     time.advance(60_000);
     await service.settled();
     assert.equal(heard.length, 1);
+  });
+});
+
+describe('telling the players (P2-08)', () => {
+  test('a first move or an ending reaches the players only once it is saved', async () => {
+    const store = new MemoryGameStore();
+    const time = new FakeTime();
+    const service = new GameService({ time, log: silentLog, store, bus: new Bus(silentLog) });
+    const created = await service.create({
+      white: 'alice',
+      black: 'bob',
+      initialFen: STANDARD_FEN,
+      clock: { initialSeconds: 600, incrementSeconds: 0 },
+    });
+    assert.ok(created.ok);
+    // What the store held each time White's socket was told of a move or an ending.
+    const seen: string[] = [];
+    class Recording extends FakeSocket {
+      override send(message: ServerMessage): void {
+        super.send(message);
+        const saved = store.saved(created.ok ? created.id : '');
+        if (message.t === 'move') seen.push(`move ${message.ply}: ${saved?.moves.length} saved`);
+        if (message.t === 'end') seen.push(`end: saved ${saved?.status}`);
+      }
+    }
+    const say = async (user: string, socket: FakeSocket) => {
+      const joined = await service.join(created.id, user);
+      assert.ok(joined.ok);
+      const connection = joined.attach(socket);
+      return (message: unknown) => connection.receive(JSON.stringify(message));
+    };
+    const white = await say('alice', new Recording());
+    const black = await say('bob', new FakeSocket());
+    white({ t: 'move', ply: 0, uci: 'e2e4' });
+    black({ t: 'move', ply: 1, uci: 'e7e5' });
+    await service.settled();
+    white({ t: 'move', ply: 2, uci: 'g1f3' });
+    time.advance(602_000);
+    await service.settled();
+    assert.deepEqual(seen, [
+      'move 0: 1 saved',
+      'move 1: 2 saved',
+      'move 2: 2 saved', // later moves are sent at once and saved within 30 seconds
+      'end: saved finished',
+    ]);
   });
 });
