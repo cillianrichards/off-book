@@ -12,7 +12,9 @@ export type ClientMessage =
    * the network lag the client measures, in milliseconds, for lag compensation (P2-07).
    */
   | { readonly t: 'move'; readonly ply: number; readonly uci: string; readonly lag?: number }
-  | { readonly t: 'abort' };
+  | { readonly t: 'abort' }
+  /** Asks for the whole game again, as a client does when the plies it was sent skip one (P2-09). */
+  | { readonly t: 'resync' };
 
 export type Rejection =
   | 'badMessage'
@@ -25,6 +27,10 @@ export type Rejection =
   | 'restarting';
 
 export type ServerMessage =
+  /**
+   * The whole game, sent on every connection and on request. The client rebuilds its board from these
+   * moves, never from its own history (P2-09).
+   */
   | { readonly t: 'state'; readonly you: Colour; readonly game: GameView }
   /** A move played, sent to both players; `ply` counts from 0, so a gap shows a missed message. */
   | {
@@ -68,6 +74,8 @@ export function parseClientMessage(text: string): ClientMessage | undefined {
       return { t: 'ping' };
     case 'abort':
       return { t: 'abort' };
+    case 'resync':
+      return { t: 'resync' };
     case 'move': {
       const { ply, uci, lag } = value as { ply?: unknown; uci?: unknown; lag?: unknown };
       if (!Number.isInteger(ply) || (ply as number) < 0 || (ply as number) > MAX_PLY) return undefined;

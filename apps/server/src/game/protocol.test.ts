@@ -6,6 +6,7 @@ import { parseClientMessage } from './protocol.ts';
 test('reads each kind of client message', () => {
   assert.deepEqual(parseClientMessage('{"t":"ping"}'), { t: 'ping' });
   assert.deepEqual(parseClientMessage('{"t":"abort"}'), { t: 'abort' });
+  assert.deepEqual(parseClientMessage('{"t":"resync"}'), { t: 'resync' });
   assert.deepEqual(parseClientMessage('{"t":"move","ply":0,"uci":"e2e4"}'), {
     t: 'move',
     ply: 0,

@@ -30,7 +30,10 @@ before(async () => {
   gameId = created.id;
 });
 
-after(() => server.close());
+after(async () => {
+  await games.shutdown();
+  await server.close();
+});
 
 const connectAs = async (user: string, id = gameId): Promise<TestClient> => {
   const opened = await openClient(`ws://${base}/play/${id}`, { 'x-test-user': user });
@@ -131,6 +134,34 @@ describe('WebSocket', () => {
       );
     }
     await Promise.all([white.close(), black.close()]);
+  });
+
+  test('a player who reconnects is sent every move played while they were away (P2-09)', async () => {
+    const created = await games.create({
+      white: 'alice',
+      black: 'bob',
+      initialFen: STANDARD_FEN,
+      clock: { initialSeconds: 600, incrementSeconds: 0 },
+    });
+    assert.ok(created.ok);
+    const white = await connectAs('alice', created.id);
+    const black = await connectAs('bob', created.id);
+    await white.nextOf('state');
+    await black.nextOf('state');
+    white.send({ t: 'move', ply: 0, uci: 'e2e4' });
+    await black.nextOf('move');
+    await white.close();
+    black.send({ t: 'move', ply: 1, uci: 'c7c5' });
+    await black.nextOf('move');
+
+    const back = await connectAs('alice', created.id);
+    const state = await back.nextOf('state');
+    assert.deepEqual(state.game.moves, ['e4', 'c5']);
+    assert.equal(state.game.ply, 2);
+    assert.equal(state.game.turn, 'white');
+    back.send({ t: 'move', ply: 2, uci: 'g1f3' });
+    assert.equal((await black.nextOf('move')).ply, 2);
+    await Promise.all([back.close(), black.close()]);
   });
 
   test('closing the server tells clients it is restarting', async () => {

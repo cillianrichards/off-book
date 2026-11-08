@@ -204,6 +204,9 @@ export class GameService {
       case 'ping':
         socket.send({ t: 'pong' });
         break;
+      case 'resync':
+        socket.send({ t: 'state', you: colour, game: game.view(now) });
+        break;
       case 'move': {
         const outcome = game.move(colour, { ply: message.ply, uci: message.uci, lagMs: message.lag }, now);
         if (outcome.kind === 'duplicate') socket.send({ t: 'ack', ply: outcome.ply });

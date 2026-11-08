@@ -343,3 +343,17 @@ describe('restarting (P2-08)', () => {
     assert.equal(await after.view('ZZZZZZZZ'), undefined);
   });
 });
+
+describe('reconnecting (P2-09)', () => {
+  test('a client that asks is sent the whole game again', async () => {
+    const { white, whiteSays, blackSays } = await table();
+    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    white.take();
+    whiteSays({ t: 'resync' });
+    const [state] = white.take();
+    assert.equal(state?.t, 'state');
+    assert.deepEqual(state?.t === 'state' && state.game.moves, ['e4', 'e5']);
+    assert.equal(state?.t === 'state' && state.you, 'white');
+  });
+});
