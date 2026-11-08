@@ -96,8 +96,9 @@ class Explorer(Protocol):
 class LichessExplorer:
     """The masters endpoint, one request at a time, waiting whenever Lichess says it is asked too often.
 
-    One connection is opened and reused for every lookup. Opening a fresh secure connection per lookup
-    cost about 2.4 seconds each on Windows, against well under a second for Lichess's answer.
+    One connection is opened and reused for every lookup, which is lighter on Lichess than a new secure
+    connection each time. The pace is Lichess's: in the first live crawl it allowed about 26 lookups, then
+    answered 429 until a minute had passed, about 0.4 lookups a second overall.
     """
 
     URL = "https://explorer.lichess.org/masters"
