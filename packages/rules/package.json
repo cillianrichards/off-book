@@ -6,10 +6,14 @@
   "type": "module",
   "exports": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.lib.json",
     "test": "node --test \"src/**/*.test.ts\""
   },
   "devDependencies": {
+    "@types/node": "catalog:",
     "typescript": "catalog:"
+  },
+  "dependencies": {
+    "chess.js": "1.4.0"
   }
 }

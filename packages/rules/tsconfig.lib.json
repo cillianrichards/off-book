@@ -1,0 +1,10 @@
+{
+  // The rules run in the browser as well as on the server, so the library itself is checked
+  // without Node's types: only the tests may use Node.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": []
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}
