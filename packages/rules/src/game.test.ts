@@ -65,7 +65,7 @@ describe('legalMoves', () => {
 describe('play', () => {
   test('plays a legal move and records it in SAN', () => {
     const game = start(STANDARD_FEN);
-    assert.deepEqual(game.play(move('e2e4')), { ok: true, san: 'e4' });
+    assert.deepEqual(game.play(move('e2e4')), { ok: true, san: 'e4', uci: 'e2e4' });
     assert.equal(game.turn, 'black');
     assert.deepEqual(game.moves, ['e4']);
     assert.equal(game.fen, 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1');
@@ -83,8 +83,8 @@ describe('play', () => {
   test('needs the promotion piece when a pawn promotes, and only then', () => {
     const fen = '8/4P3/8/8/8/k7/8/4K3 w - - 0 1';
     assert.deepEqual(start(fen).play(move('e7e8')), { ok: false, error: 'illegal' });
-    assert.deepEqual(start(fen).play(move('e7e8q')), { ok: true, san: 'e8=Q' });
-    assert.deepEqual(start(fen).play(move('e7e8n')), { ok: true, san: 'e8=N' });
+    assert.deepEqual(start(fen).play(move('e7e8q')), { ok: true, san: 'e8=Q', uci: 'e7e8q' });
+    assert.deepEqual(start(fen).play(move('e7e8n')), { ok: true, san: 'e8=N', uci: 'e7e8n' });
     assert.deepEqual(start(STANDARD_FEN).play(move('e2e4q')), { ok: false, error: 'illegal' });
   });
 
@@ -99,6 +99,37 @@ describe('play', () => {
     playAll(game, ['e2e4']);
     (game.moves as string[]).push('nonsense');
     assert.deepEqual(game.moves, ['e4']);
+  });
+});
+
+describe('isLegal', () => {
+  test('agrees with play, without playing', () => {
+    const game = start(STANDARD_FEN);
+    assert.equal(game.isLegal(move('e2e4')), true);
+    assert.equal(game.isLegal(move('e2e5')), false);
+    assert.equal(game.isLegal(move('e2e4q')), false);
+    assert.equal(game.fen, STANDARD_FEN);
+    assert.equal(start('8/4P3/8/8/8/k7/8/4K3 w - - 0 1').isLegal(move('e7e8')), false);
+    assert.equal(start('8/4P3/8/8/8/k7/8/4K3 w - - 0 1').isLegal(move('e7e8r')), true);
+  });
+
+  test('is false once the game is over', () => {
+    const game = start(STANDARD_FEN);
+    playAll(game, ['f2f3', 'e7e5', 'g2g4', 'd8h4']);
+    assert.equal(game.isLegal(move('e1f2')), false);
+  });
+});
+
+describe('uciMoves', () => {
+  test('records each move in UCI, castling as the king’s move and promotions with their piece', () => {
+    const game = start('r3k3/1P6/8/8/8/8/8/R3K2R w KQq - 0 1');
+    playAll(game, ['e1g1', 'a8a7', 'b7b8n']);
+    assert.deepEqual(game.moves, ['O-O', 'Ra7', 'b8=N']);
+    assert.deepEqual(game.uciMoves, ['e1g1', 'a8a7', 'b7b8n']);
+  });
+
+  test('is rebuilt by replay', () => {
+    assert.deepEqual(ChessGame.replay(STANDARD_FEN, ['e4', 'e5', 'Nf3']).uciMoves, ['e2e4', 'e7e5', 'g1f3']);
   });
 });
 

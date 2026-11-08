@@ -6,7 +6,7 @@
 // checkmate. Threefold repetition only lets a player claim a draw, and only for the position on the
 // board, as on Lichess.
 
-import { Chess, type Square } from 'chess.js';
+import { Chess, type Move, type Square } from 'chess.js';
 
 import { readStartFen } from './start-fen.ts';
 
@@ -32,7 +32,7 @@ export type Outcome =
   | { readonly termination: Exclude<Termination, 'checkmate'> };
 
 export type MoveResult =
-  | { readonly ok: true; readonly san: string }
+  | { readonly ok: true; readonly san: string; readonly uci: string }
   | { readonly ok: false; readonly error: 'illegal' | 'gameOver' };
 
 export type NewGame =
@@ -43,6 +43,7 @@ export class ChessGame {
   readonly startFen: string;
   readonly #chess: Chess;
   readonly #moves: string[] = [];
+  readonly #uciMoves: string[] = [];
   // How many times each position has occurred since the starting FEN, which counts as the first.
   readonly #occurrences = new Map<string, number>();
   #outcome: Outcome | undefined;
@@ -71,9 +72,9 @@ export class ChessGame {
     for (const [index, san] of sans.entries()) {
       if (game.#outcome !== undefined)
         throw new Error(`Stored move ${index + 1} (${san}) follows the end of the game.`);
-      let played: string;
+      let played: Move;
       try {
-        played = game.#chess.move(san, { strict: true }).san;
+        played = game.#chess.move(san, { strict: true });
       } catch {
         throw new Error(`Stored move ${index + 1} (${san}) is not legal.`);
       }
@@ -93,6 +94,11 @@ export class ChessGame {
   /** The moves played since the starting FEN, in SAN. */
   get moves(): readonly string[] {
     return [...this.#moves];
+  }
+
+  /** The same moves in UCI, such as `e2e4`, `e1g1` or `e7e8q`. */
+  get uciMoves(): readonly string[] {
+    return [...this.#uciMoves];
   }
 
   get isCheck(): boolean {
@@ -125,19 +131,29 @@ export class ChessGame {
   /** Plays a move if it is exactly a legal one, including the promotion piece when and only when one is needed. */
   play(intent: MoveIntent): MoveResult {
     if (this.#outcome !== undefined) return { ok: false, error: 'gameOver' };
-    // chess.js would ignore a promotion piece on a move that does not promote, and Lichess treats such
-    // a move as illegal, so the intent must match a legal move exactly.
-    const legal = this.#chess
-      .moves({ verbose: true, square: intent.from })
-      .find(move => move.to === intent.to && move.promotion === intent.promotion);
+    const legal = this.#findLegal(intent);
     if (legal === undefined) return { ok: false, error: 'illegal' };
-    const played = this.#chess.move(legal.san, { strict: true }).san;
+    const played = this.#chess.move(legal.san, { strict: true });
     this.#afterMove(played);
-    return { ok: true, san: played };
+    return { ok: true, san: played.san, uci: played.lan };
   }
 
-  #afterMove(san: string): void {
-    this.#moves.push(san);
+  /** Whether `play` would accept the move, without playing it. */
+  isLegal(intent: MoveIntent): boolean {
+    return this.#outcome === undefined && this.#findLegal(intent) !== undefined;
+  }
+
+  // chess.js would ignore a promotion piece on a move that does not promote, and Lichess treats such a
+  // move as illegal, so the intent must match a legal move exactly.
+  #findLegal(intent: MoveIntent): Move | undefined {
+    return this.#chess
+      .moves({ verbose: true, square: intent.from })
+      .find(move => move.to === intent.to && move.promotion === intent.promotion);
+  }
+
+  #afterMove(move: Move): void {
+    this.#moves.push(move.san);
+    this.#uciMoves.push(move.lan);
     this.#countPosition();
     this.#outcome = this.#endedBy();
   }

@@ -60,7 +60,7 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 **Game service**
 
 - [x] **P2-05 Server skeleton.** One Node.js process with HTTP API, WebSocket endpoint, and module boundaries for game, pairing, lobby, rating and fair play. Built 8 November 2026: `GET /health`, `GET /api/games/:id` and the game WebSocket at `/play/:id`, as lila's round socket; a test keeps each module behind its `index.ts`. The WebSocket refuses everyone until sign-in exists (P2-02).
-- [ ] **P2-06 Authoritative moves.** The server validates every proposed move and rejects illegal or out-of-turn ones. Each intent carries its move number, so a resend is harmless.
+- [x] **P2-06 Authoritative moves.** The server validates every proposed move and rejects illegal or out-of-turn ones. Each intent carries its move number, so a resend is harmless.
 - [ ] **P2-07 Server clocks.** Timed on server receipt, lag compensation capped per move, flags detected on the server. A flag against insufficient material is a draw.
 - [ ] **P2-08 Persistence.** Live games are held in memory, as lila does. Each game is saved to PostgreSQL as soon as its status changes, and otherwise within 30 seconds of a move. A clean shutdown saves every game and gives the side to move 20 seconds and the other side 10; lost clock time is not otherwise given back (D-01). Done when a clean restart resumes every game with that allowance, and killing the process mid-game resumes every game from its last save.
 - [ ] **P2-09 Reconnect.** The client rebuilds from the server's move list, never its own.

@@ -1,9 +1,16 @@
 // A game in play, held in memory by the game service (D-01). It does no I/O and sets no timers: the
 // service passes the time in and decides when to save.
 
-import { ChessGame, type Colour } from '@off-book/rules';
+import { ChessGame, type Colour, type MoveIntent, type Termination } from '@off-book/rules';
 
 export type GameStatus = 'started' | 'finished' | 'aborted';
+export type Result = '1-0' | '0-1' | '1/2-1/2';
+/** How a game ended: by the rules (P2-03), on time, by abandonment, or aborted before it began. */
+export type GameTermination = Termination | 'flag' | 'abandonment' | 'aborted';
+
+export type Ending =
+  | { readonly status: 'finished'; readonly result: Result; readonly termination: GameTermination }
+  | { readonly status: 'aborted'; readonly termination: 'aborted' };
 
 export interface ClockSettings {
   readonly initialSeconds: number;
@@ -18,6 +25,25 @@ export interface NewGame {
   readonly clock: ClockSettings;
   readonly now: number;
 }
+
+/** A move a player proposes: the ply it is meant for, so a resend cannot be played twice, and the move. */
+export interface ProposedMove {
+  readonly ply: number;
+  readonly uci: string;
+}
+
+export type MoveOutcome =
+  | {
+      readonly kind: 'moved';
+      readonly ply: number;
+      readonly san: string;
+      readonly uci: string;
+      readonly fen: string;
+      readonly ending?: Ending;
+    }
+  /** The same move again for a ply already played by this player: a resend, which changes nothing. */
+  | { readonly kind: 'duplicate'; readonly ply: number }
+  | { readonly kind: 'rejected'; readonly reason: 'gameOver' | 'stale' | 'notYourTurn' | 'illegal' };
 
 export interface ClockView extends ClockSettings {
   /** Each side's remaining time in centiseconds, as it stands when the view is taken. */
@@ -36,12 +62,16 @@ export interface GameView {
   readonly ply: number;
   readonly turn: Colour;
   readonly status: GameStatus;
+  readonly result?: Result;
+  readonly termination?: GameTermination;
   readonly clock: ClockView;
 }
 
 // Lichess's limits for a real-time clock: up to 180 minutes, with up to 180 seconds' increment.
 const MAX_INITIAL_SECONDS = 180 * 60;
 const MAX_INCREMENT_SECONDS = 180;
+
+const UCI = /^([a-h][1-8])([a-h][1-8])([qrbn])?$/;
 
 export type Created =
   | { readonly ok: true; readonly game: LiveGame }
@@ -53,7 +83,11 @@ export class LiveGame {
   readonly clock: ClockSettings;
   readonly createdAt: number;
   readonly #chess: ChessGame;
-  #status: GameStatus = 'started';
+  // Whoever moves first from the starting FEN, which may be Black (P2-04).
+  readonly #firstMover: Colour;
+  #ending: Ending | undefined;
+  #lastMoveAt: number | undefined;
+  #finishedAt: number | undefined;
 
   private constructor(
     id: string,
@@ -67,6 +101,7 @@ export class LiveGame {
     this.#chess = chess;
     this.clock = clock;
     this.createdAt = createdAt;
+    this.#firstMover = chess.turn;
   }
 
   static create(input: NewGame): Created {
@@ -89,17 +124,76 @@ export class LiveGame {
   }
 
   get status(): GameStatus {
-    return this.#status;
+    return this.#ending?.status ?? 'started';
+  }
+
+  get ending(): Ending | undefined {
+    return this.#ending;
   }
 
   get ply(): number {
     return this.#chess.moves.length;
   }
 
+  get turn(): Colour {
+    return this.#chess.turn;
+  }
+
+  get lastMoveAt(): number | undefined {
+    return this.#lastMoveAt;
+  }
+
+  get finishedAt(): number | undefined {
+    return this.#finishedAt;
+  }
+
   colourOf(userId: string): Colour | undefined {
     if (userId === this.players.white) return 'white';
     if (userId === this.players.black) return 'black';
     return undefined;
+  }
+
+  /** How many moves a side has made since the starting FEN. */
+  movesBy(colour: Colour): number {
+    const plies = this.ply;
+    return colour === this.#firstMover ? Math.ceil(plies / 2) : Math.floor(plies / 2);
+  }
+
+  /**
+   * Plays a player's move if it is theirs to make, legal, and meant for this ply (P2-06). The ply makes a
+   * resend harmless: the same move again for a ply this player has already played is a duplicate, and
+   * anything else meant for another ply is stale.
+   */
+  move(colour: Colour, proposed: ProposedMove, now: number): MoveOutcome {
+    if (this.#ending !== undefined) return { kind: 'rejected', reason: 'gameOver' };
+    if (proposed.ply !== this.ply) {
+      const resent =
+        proposed.ply < this.ply &&
+        this.#chess.uciMoves[proposed.ply] === proposed.uci &&
+        this.#moverOf(proposed.ply) === colour;
+      return resent ? { kind: 'duplicate', ply: proposed.ply } : { kind: 'rejected', reason: 'stale' };
+    }
+    if (colour !== this.turn) return { kind: 'rejected', reason: 'notYourTurn' };
+    const intent = parseUci(proposed.uci);
+    if (intent === undefined) return { kind: 'rejected', reason: 'illegal' };
+    const played = this.#chess.play(intent);
+    if (!played.ok) return { kind: 'rejected', reason: 'illegal' };
+
+    this.#lastMoveAt = now;
+    const ply = this.ply - 1;
+    const outcome = this.#chess.outcome;
+    if (outcome === undefined)
+      return { kind: 'moved', ply, san: played.san, uci: played.uci, fen: this.#chess.fen };
+    const result: Result =
+      outcome.termination !== 'checkmate' ? '1/2-1/2' : outcome.winner === 'white' ? '1-0' : '0-1';
+    const ending = this.#end({ status: 'finished', result, termination: outcome.termination }, now);
+    return { kind: 'moved', ply, san: played.san, uci: played.uci, fen: this.#chess.fen, ending };
+  }
+
+  /** Aborts the game, which only a player who has not yet made their first move may do. */
+  abort(colour: Colour, now: number): Ending | undefined {
+    if (this.#ending !== undefined || this.movesBy(colour) > 0) return undefined;
+    return this.#end({ status: 'aborted', termination: 'aborted' }, now);
   }
 
   view(_now: number): GameView {
@@ -111,9 +205,32 @@ export class LiveGame {
       fen: this.#chess.fen,
       moves: this.#chess.moves,
       ply: this.ply,
-      turn: this.#chess.turn,
-      status: this.#status,
+      turn: this.turn,
+      status: this.status,
+      ...(this.#ending?.status === 'finished' ? { result: this.#ending.result } : {}),
+      ...(this.#ending === undefined ? {} : { termination: this.#ending.termination }),
       clock: { ...this.clock, white: initialCs, black: initialCs, running: false },
     };
   }
+
+  #moverOf(ply: number): Colour {
+    return ply % 2 === 0 ? this.#firstMover : this.#firstMover === 'white' ? 'black' : 'white';
+  }
+
+  #end(ending: Ending, now: number): Ending {
+    this.#ending = ending;
+    this.#finishedAt = now;
+    return ending;
+  }
+}
+
+function parseUci(uci: string): MoveIntent | undefined {
+  const match = UCI.exec(uci);
+  if (match === null) return undefined;
+  const [, from, to, promotion] = match;
+  return {
+    from: from as MoveIntent['from'],
+    to: to as MoveIntent['to'],
+    ...(promotion === undefined ? {} : { promotion: promotion as NonNullable<MoveIntent['promotion']> }),
+  };
 }

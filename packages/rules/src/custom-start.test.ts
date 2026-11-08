@@ -83,7 +83,7 @@ describe('castling rights come from the FEN', () => {
 describe('en passant rights come from the FEN', () => {
   test('a capture the FEN allows can be the first move', () => {
     const game = start('4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1');
-    assert.deepEqual(game.play(move('e5d6')), { ok: true, san: 'exd6' });
+    assert.deepEqual(game.play(move('e5d6')), { ok: true, san: 'exd6', uci: 'e5d6' });
     assert.equal(game.fen, '4k3/8/3P4/8/8/8/8/4K3 b - - 0 1');
   });
 
@@ -100,7 +100,7 @@ describe('Black-to-move starts', () => {
     const game = start(afterE4);
     assert.equal(game.turn, 'black');
     assert.deepEqual(game.play(move('d2d4')), { ok: false, error: 'illegal' });
-    assert.deepEqual(game.play(move('e7e5')), { ok: true, san: 'e5' });
+    assert.deepEqual(game.play(move('e7e5')), { ok: true, san: 'e5', uci: 'e7e5' });
     assert.equal(game.turn, 'white');
     assert.deepEqual(game.moves, ['e5']);
   });

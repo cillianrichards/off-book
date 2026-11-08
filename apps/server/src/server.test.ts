@@ -104,6 +104,35 @@ describe('WebSocket', () => {
     await white.close();
   });
 
+  test('two players play a game to the end over their sockets', async () => {
+    const created = await games.create({
+      white: 'alice',
+      black: 'bob',
+      initialFen: STANDARD_FEN,
+      clock: { initialSeconds: 600, incrementSeconds: 0 },
+    });
+    assert.ok(created.ok);
+    const white = await connectAs('alice', created.id);
+    const black = await connectAs('bob', created.id);
+    await white.nextOf('state');
+    await black.nextOf('state');
+    const moves: [TestClient, string][] = [
+      [white, 'f2f3'],
+      [black, 'e7e5'],
+      [white, 'g2g4'],
+      [black, 'd8h4'],
+    ];
+    for (const [ply, [player, uci]] of moves.entries()) {
+      player.send({ t: 'move', ply, uci });
+      assert.equal((await white.nextOf('move')).uci, uci);
+      assert.equal((await black.nextOf('move')).uci, uci);
+    }
+    const end = { t: 'end', status: 'finished', result: '0-1', termination: 'checkmate' };
+    assert.deepEqual(await white.nextOf('end'), end);
+    assert.deepEqual(await black.nextOf('end'), end);
+    await Promise.all([white.close(), black.close()]);
+  });
+
   test('closing the server tells clients it is restarting', async () => {
     const own = new GameService({ time: realTime, log: silentLog });
     const created = await own.create({

@@ -6,7 +6,7 @@ import type { Colour } from '@off-book/rules';
 import type { Log } from '../log.ts';
 import type { Time } from '../time.ts';
 import { newGameId } from './ids.ts';
-import { type ClockSettings, type GameView, LiveGame } from './live-game.ts';
+import { type ClockSettings, type Ending, type GameView, LiveGame } from './live-game.ts';
 import { type ClientMessage, parseClientMessage, type ServerMessage } from './protocol.ts';
 
 /** One open WebSocket, as the game service sees it. */
@@ -84,7 +84,7 @@ export class GameService {
       receive: text => {
         const message = parseClientMessage(text);
         if (message === undefined) socket.send({ t: 'rejected', reason: 'badMessage' });
-        else this.#handle(message, socket);
+        else this.#handle(entry, colour, message, socket);
       },
       closed: () => {
         entry.sockets[colour].delete(socket);
@@ -92,11 +92,40 @@ export class GameService {
     };
   }
 
-  #handle(message: ClientMessage, socket: PlayerSocket): void {
+  #handle(entry: Entry, colour: Colour, message: ClientMessage, socket: PlayerSocket): void {
+    const { game } = entry;
+    const now = this.#time.now();
     switch (message.t) {
       case 'ping':
         socket.send({ t: 'pong' });
         break;
+      case 'move': {
+        const outcome = game.move(colour, message, now);
+        if (outcome.kind === 'duplicate') socket.send({ t: 'ack', ply: outcome.ply });
+        else if (outcome.kind === 'rejected')
+          socket.send({ t: 'rejected', reason: outcome.reason, ply: game.ply });
+        else {
+          const { ply, san, uci, fen } = outcome;
+          this.#broadcast(entry, { t: 'move', ply, san, uci, fen });
+          if (outcome.ending !== undefined) this.#finish(entry, outcome.ending);
+        }
+        break;
+      }
+      case 'abort': {
+        const ending = game.abort(colour, now);
+        if (ending === undefined) socket.send({ t: 'rejected', reason: 'notAllowed', ply: game.ply });
+        else this.#finish(entry, ending);
+        break;
+      }
     }
+  }
+
+  #finish(entry: Entry, ending: Ending): void {
+    this.#log.info('game ended', { game: entry.game.id, ...ending });
+    this.#broadcast(entry, { t: 'end', ...ending });
+  }
+
+  #broadcast(entry: Entry, message: ServerMessage): void {
+    for (const socket of [...entry.sockets.white, ...entry.sockets.black]) socket.send(message);
   }
 }
