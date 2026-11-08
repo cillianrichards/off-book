@@ -7,6 +7,8 @@ test('reads each kind of client message', () => {
   assert.deepEqual(parseClientMessage('{"t":"ping"}'), { t: 'ping' });
   assert.deepEqual(parseClientMessage('{"t":"abort"}'), { t: 'abort' });
   assert.deepEqual(parseClientMessage('{"t":"resync"}'), { t: 'resync' });
+  assert.deepEqual(parseClientMessage('{"t":"claim","outcome":"win"}'), { t: 'claim', outcome: 'win' });
+  assert.deepEqual(parseClientMessage('{"t":"claim","outcome":"draw"}'), { t: 'claim', outcome: 'draw' });
   assert.deepEqual(parseClientMessage('{"t":"move","ply":0,"uci":"e2e4"}'), {
     t: 'move',
     ply: 0,
@@ -43,6 +45,8 @@ test('refuses anything that is not a client message', () => {
     '{"t":"move","ply":0,"uci":"e2e9"}',
     '{"t":"move","ply":0,"uci":"e7e8k"}',
     '{"t":"move","ply":0}',
+    '{"t":"claim"}',
+    '{"t":"claim","outcome":"loss"}',
     '{"t":"move","ply":0,"uci":"e2e4","lag":-1}',
     '{"t":"move","ply":0,"uci":"e2e4","lag":"40"}',
     '{"t":"move","ply":0,"uci":"e2e4","lag":60001}',

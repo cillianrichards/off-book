@@ -329,6 +329,46 @@ export class LiveGame {
     return this.#end({ status: 'aborted', termination: 'aborted' }, now);
   }
 
+  /**
+   * How long a player must have been disconnected before their opponent may claim the game (P2-10), as
+   * lila's round actor decides: 30 seconds, times 1 for bullet, 2 for blitz, 4 for rapid (10+0 included)
+   * and 10 for classical; halved when the player who left is four points of material down; never less
+   * than 10 seconds.
+   */
+  goneAfterMs(colour: Colour): number {
+    const estimatedTotalSeconds = this.clock.initialSeconds + 40 * this.clock.incrementSeconds;
+    const speed =
+      estimatedTotalSeconds < 180
+        ? 1
+        : estimatedTotalSeconds < 480
+          ? 2
+          : estimatedTotalSeconds < 1500
+            ? 4
+            : 10;
+    const imbalance = this.#chess.materialImbalance;
+    const losing = colour === 'white' ? imbalance <= -4 : imbalance >= 4;
+    return Math.max(10_000, (30_000 * speed) / (losing ? 2 : 1));
+  }
+
+  /**
+   * Whether a player may claim the game from an opponent who has gone, as lila allows: once both sides
+   * have moved, and only while it is the gone player's turn. The caller checks how long they have gone.
+   */
+  mayClaim(claimer: Colour): boolean {
+    return this.#ending === undefined && this.ply >= 2 && this.turn !== claimer;
+  }
+
+  /**
+   * Ends the game on an abandonment claim (P2-10). A claimed win is a draw if the claimer could never
+   * have mated, as with a flag.
+   */
+  abandon(claimer: Colour, claim: 'win' | 'draw', now: number): Ending | undefined {
+    if (!this.mayClaim(claimer)) return undefined;
+    const draw = claim === 'draw' || this.#chess.opponentHasInsufficientMaterial;
+    const result: Result = draw ? '1/2-1/2' : claimer === 'white' ? '1-0' : '0-1';
+    return this.#end({ status: 'finished', result, termination: 'abandonment' }, now);
+  }
+
   view(now: number): GameView {
     return {
       id: this.id,

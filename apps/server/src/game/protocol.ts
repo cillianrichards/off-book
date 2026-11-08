@@ -14,7 +14,9 @@ export type ClientMessage =
   | { readonly t: 'move'; readonly ply: number; readonly uci: string; readonly lag?: number }
   | { readonly t: 'abort' }
   /** Asks for the whole game again, as a client does when the plies it was sent skip one (P2-09). */
-  | { readonly t: 'resync' };
+  | { readonly t: 'resync' }
+  /** Claims the game from an opponent who has left it (P2-10). */
+  | { readonly t: 'claim'; readonly outcome: 'win' | 'draw' };
 
 export type Rejection =
   | 'badMessage'
@@ -24,14 +26,25 @@ export type Rejection =
   | 'illegal'
   | 'notAllowed'
   /** The server is shutting down cleanly; the client should reconnect and resend (P2-08). */
-  | 'restarting';
+  | 'restarting'
+  /** The opponent has not been gone long enough, or it is the claimer's own turn (P2-10). */
+  | 'notClaimable';
+
+/** Whether a player's opponent is connected, and if not, from when the game can be claimed (P2-10). */
+export interface OpponentStatus {
+  readonly connected: boolean;
+  /** Epoch milliseconds; present while the opponent is disconnected from a game in play. */
+  readonly claimableAt?: number;
+}
 
 export type ServerMessage =
   /**
    * The whole game, sent on every connection and on request. The client rebuilds its board from these
    * moves, never from its own history (P2-09).
    */
-  | { readonly t: 'state'; readonly you: Colour; readonly game: GameView }
+  | { readonly t: 'state'; readonly you: Colour; readonly game: GameView; readonly opponent: OpponentStatus }
+  /** The opponent has disconnected or come back. */
+  | ({ readonly t: 'opponent' } & OpponentStatus)
   /** A move played, sent to both players; `ply` counts from 0, so a gap shows a missed message. */
   | {
       readonly t: 'move';
@@ -76,6 +89,10 @@ export function parseClientMessage(text: string): ClientMessage | undefined {
       return { t: 'abort' };
     case 'resync':
       return { t: 'resync' };
+    case 'claim': {
+      const { outcome } = value as { outcome?: unknown };
+      return outcome === 'win' || outcome === 'draw' ? { t: 'claim', outcome } : undefined;
+    }
     case 'move': {
       const { ply, uci, lag } = value as { ply?: unknown; uci?: unknown; lag?: unknown };
       if (!Number.isInteger(ply) || (ply as number) < 0 || (ply as number) > MAX_PLY) return undefined;

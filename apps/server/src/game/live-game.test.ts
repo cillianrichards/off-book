@@ -324,3 +324,77 @@ describe('saving and restoring (P2-08)', () => {
     assert.throws(() => LiveGame.restore({ ...record, moves: ['e4', 'e4'] }), /not legal/);
   });
 });
+
+describe('abandonment (P2-10)', () => {
+  const create = (fen: string, clock = TEN_PLUS_ZERO) => {
+    const created = LiveGame.create({
+      id: 'abcd1234',
+      white: 'alice',
+      black: 'bob',
+      initialFen: fen,
+      clock,
+      now: NOW,
+    });
+    assert.ok(created.ok);
+    return created.game;
+  };
+
+  test('a player is gone after lila’s time for the speed of game', () => {
+    assert.equal(newGame().goneAfterMs('white'), 120_000); // 10+0, rapid
+    assert.equal(
+      create(STANDARD_FEN, { initialSeconds: 180, incrementSeconds: 2 }).goneAfterMs('white'),
+      60_000,
+    ); // blitz
+    assert.equal(
+      create(STANDARD_FEN, { initialSeconds: 60, incrementSeconds: 0 }).goneAfterMs('white'),
+      30_000,
+    ); // bullet
+    assert.equal(
+      create(STANDARD_FEN, { initialSeconds: 1800, incrementSeconds: 0 }).goneAfterMs('white'),
+      300_000,
+    ); // classical
+  });
+
+  test('in half the time when the player who left is four points down', () => {
+    // White is a rook down.
+    const game = newGame('r3k3/pppppppp/8/8/8/8/PPPPPPPP/4K3 w - - 0 1');
+    assert.equal(game.goneAfterMs('white'), 60_000);
+    assert.equal(game.goneAfterMs('black'), 120_000);
+  });
+
+  test('a claim needs both sides to have moved, and the gone player to be on move', () => {
+    const game = newGame();
+    play(game, ['e2e4']);
+    assert.equal(game.mayClaim('white'), false);
+    play(game, ['e7e5']);
+    assert.equal(game.mayClaim('white'), false, 'it is White’s own turn');
+    assert.equal(game.mayClaim('black'), true);
+    assert.equal(game.abandon('white', 'win', NOW), undefined);
+    assert.deepEqual(game.abandon('black', 'win', NOW), {
+      status: 'finished',
+      result: '0-1',
+      termination: 'abandonment',
+    });
+  });
+
+  test('a claimed win is a draw if the claimer could never have mated', () => {
+    // Black has king and knight against king and queen; White has left, on move.
+    const game = newGame('7k/8/6Q1/8/3K4/8/1n6/8 w - - 0 1');
+    play(game, ['d4e4', 'b2d1']);
+    assert.deepEqual(game.abandon('black', 'win', NOW), {
+      status: 'finished',
+      result: '1/2-1/2',
+      termination: 'abandonment',
+    });
+  });
+
+  test('a draw can be claimed instead', () => {
+    const game = newGame();
+    play(game, ['e2e4', 'e7e5', 'g1f3']);
+    assert.deepEqual(game.abandon('white', 'draw', NOW), {
+      status: 'finished',
+      result: '1/2-1/2',
+      termination: 'abandonment',
+    });
+  });
+});

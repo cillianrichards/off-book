@@ -21,6 +21,10 @@ interface Table {
   readonly black: FakeSocket;
   readonly whiteSays: (message: unknown) => void;
   readonly blackSays: (message: unknown) => void;
+  /** Closes a player's socket, as a dropped connection does. */
+  readonly leaves: (colour: 'white' | 'black') => void;
+  /** Connects a player again on a new socket, returning it. */
+  readonly returns: (colour: 'white' | 'black') => Promise<FakeSocket>;
 }
 
 /** A game with both players connected and their opening state messages already taken. */
@@ -39,12 +43,21 @@ async function table(initialFen = STANDARD_FEN, store = new MemoryGameStore()): 
     const joined = await service.join(created.id, user);
     assert.ok(joined.ok);
     const connection = joined.attach(socket);
-    socket.take();
+    connections.set(socket, connection);
     return (message: unknown) => connection.receive(JSON.stringify(message));
   };
+  const connections = new Map<FakeSocket, { closed(): void }>();
   const whiteSays = await says('alice', sockets.white);
   const blackSays = await says('bob', sockets.black);
-  return { service, store, time, id: created.id, ...sockets, whiteSays, blackSays };
+  sockets.white.take();
+  sockets.black.take();
+  const leaves = (colour: 'white' | 'black') => connections.get(sockets[colour])?.closed();
+  const returns = async (colour: 'white' | 'black') => {
+    const socket = new FakeSocket();
+    await says(colour === 'white' ? 'alice' : 'bob', socket);
+    return socket;
+  };
+  return { service, store, time, id: created.id, ...sockets, whiteSays, blackSays, leaves, returns };
 }
 
 describe('moves (P2-06)', () => {
@@ -355,5 +368,90 @@ describe('reconnecting (P2-09)', () => {
     assert.equal(state?.t, 'state');
     assert.deepEqual(state?.t === 'state' && state.game.moves, ['e4', 'e5']);
     assert.equal(state?.t === 'state' && state.you, 'white');
+  });
+});
+
+describe('abandonment (P2-10)', () => {
+  // At 10+0, rapid, a player is gone after two minutes away.
+  const GONE_MS = 120_000;
+
+  async function underway() {
+    const setup = await table();
+    setup.whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    setup.blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    setup.whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
+    setup.white.take();
+    setup.black.take();
+    return setup;
+  }
+
+  test('a player is told when their opponent leaves, from when they may claim, and when they return', async () => {
+    const { time, white, leaves, returns } = await underway();
+    leaves('black');
+    assert.deepEqual(white.take(), [{ t: 'opponent', connected: false, claimableAt: time.now() + GONE_MS }]);
+    const back = await returns('black');
+    assert.deepEqual(white.take(), [{ t: 'opponent', connected: true }]);
+    const [state] = back.of('state');
+    assert.deepEqual(state?.opponent, { connected: true });
+  });
+
+  test('the disconnected player’s clock keeps running', async () => {
+    const { service, id, time, leaves } = await underway();
+    leaves('black');
+    time.advance(90_000);
+    assert.equal((await service.view(id))?.clock.black, 60_000 - 9_000);
+  });
+
+  test('after the grace period the opponent may claim the win', async () => {
+    const { service, store, id, time, white, whiteSays, leaves } = await underway();
+    leaves('black');
+    white.take();
+    time.advance(GONE_MS - 1);
+    whiteSays({ t: 'claim', outcome: 'win' });
+    assert.deepEqual(white.take(), [{ t: 'rejected', reason: 'notClaimable', ply: 3 }]);
+    time.advance(1);
+    whiteSays({ t: 'claim', outcome: 'win' });
+    const [end] = white.of('end');
+    assert.deepEqual(end && { status: end.status, result: end.result, termination: end.termination }, {
+      status: 'finished',
+      result: '1-0',
+      termination: 'abandonment',
+    });
+    await service.settled();
+    assert.equal(store.saved(id)?.termination, 'abandonment');
+  });
+
+  test('or a draw', async () => {
+    const { time, white, whiteSays, leaves } = await underway();
+    leaves('black');
+    time.advance(GONE_MS);
+    whiteSays({ t: 'claim', outcome: 'draw' });
+    assert.equal(white.of('end')[0]?.result, '1/2-1/2');
+  });
+
+  test('only on the gone player’s turn', async () => {
+    const { time, black, blackSays, leaves } = await underway();
+    leaves('white');
+    black.take();
+    time.advance(GONE_MS);
+    blackSays({ t: 'claim', outcome: 'win' });
+    assert.deepEqual(black.take(), [{ t: 'rejected', reason: 'notClaimable', ply: 3 }]);
+  });
+
+  test('not while the opponent is connected', async () => {
+    const { time, white, whiteSays } = await underway();
+    time.advance(GONE_MS * 2);
+    whiteSays({ t: 'claim', outcome: 'win' });
+    assert.deepEqual(white.of('rejected'), [{ t: 'rejected', reason: 'notClaimable', ply: 3 }]);
+  });
+
+  test('and not before both sides have moved', async () => {
+    const { time, white, whiteSays, leaves } = await table();
+    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    leaves('black');
+    white.take();
+    time.advance(GONE_MS);
+    whiteSays({ t: 'claim', outcome: 'win' });
+    assert.deepEqual(white.take(), [{ t: 'rejected', reason: 'notClaimable', ply: 1 }]);
   });
 });

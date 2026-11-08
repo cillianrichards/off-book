@@ -8,7 +8,12 @@ import { errorFields, type Log } from '../log.ts';
 import type { Time, Timer } from '../time.ts';
 import { newGameId } from './ids.ts';
 import { type ClockSettings, type Ending, type GameView, LiveGame } from './live-game.ts';
-import { type ClientMessage, parseClientMessage, type ServerMessage } from './protocol.ts';
+import {
+  type ClientMessage,
+  type OpponentStatus,
+  parseClientMessage,
+  type ServerMessage,
+} from './protocol.ts';
 import type { GameStore } from './store.ts';
 
 /** One open WebSocket, as the game service sees it. */
@@ -49,6 +54,8 @@ export interface GameServiceOptions {
 interface Entry {
   readonly game: LiveGame;
   readonly sockets: Record<Colour, Set<PlayerSocket>>;
+  /** When each player's last socket closed, or undefined while they have one open (P2-10). */
+  readonly offlineSince: Record<Colour, number | undefined>;
   /** The server's own check for the side to move's flag (P2-07). */
   flagCheck?: Timer;
   /** The pending save of moves not yet written (P2-08). */
@@ -175,14 +182,25 @@ export class GameService {
   }
 
   #add(game: LiveGame): Entry {
-    const entry: Entry = { game, sockets: { white: new Set(), black: new Set() }, saving: Promise.resolve() };
+    // Both players count as away until they connect, as in lila, including after a restart.
+    const now = this.#time.now();
+    const entry: Entry = {
+      game,
+      sockets: { white: new Set(), black: new Set() },
+      offlineSince: { white: now, black: now },
+      saving: Promise.resolve(),
+    };
     this.#games.set(game.id, entry);
     return entry;
   }
 
   #attach(entry: Entry, colour: Colour, socket: PlayerSocket): Connection {
     entry.sockets[colour].add(socket);
-    socket.send({ t: 'state', you: colour, game: entry.game.view(this.#time.now()) });
+    if (entry.offlineSince[colour] !== undefined) {
+      entry.offlineSince[colour] = undefined;
+      this.#sendTo(entry, other(colour), { t: 'opponent', connected: true });
+    }
+    socket.send(this.#state(entry, colour));
     return {
       receive: text => {
         const message = parseClientMessage(text);
@@ -192,6 +210,10 @@ export class GameService {
       },
       closed: () => {
         entry.sockets[colour].delete(socket);
+        if (entry.sockets[colour].size === 0) {
+          entry.offlineSince[colour] = this.#time.now();
+          this.#sendTo(entry, other(colour), { t: 'opponent', ...this.#statusOf(entry, colour) });
+        }
         this.#forgetIfDone(entry);
       },
     };
@@ -205,8 +227,17 @@ export class GameService {
         socket.send({ t: 'pong' });
         break;
       case 'resync':
-        socket.send({ t: 'state', you: colour, game: game.view(now) });
+        socket.send(this.#state(entry, colour));
         break;
+      case 'claim': {
+        // Abandonment (P2-10): the opponent has been gone long enough, and it is their turn.
+        const gone = this.#statusOf(entry, other(colour)).claimableAt;
+        const ending =
+          gone !== undefined && gone <= now ? game.abandon(colour, message.outcome, now) : undefined;
+        if (ending === undefined) socket.send({ t: 'rejected', reason: 'notClaimable', ply: game.ply });
+        else this.#finish(entry, ending);
+        break;
+      }
       case 'move': {
         const outcome = game.move(colour, { ply: message.ply, uci: message.uci, lagMs: message.lag }, now);
         if (outcome.kind === 'duplicate') socket.send({ t: 'ack', ply: outcome.ply });
@@ -293,6 +324,23 @@ export class GameService {
     if (entry.game.status !== 'started' && !watched && entry.saveTimer === undefined) {
       this.#games.delete(entry.game.id);
     }
+  }
+
+  #state(entry: Entry, colour: Colour): ServerMessage {
+    const game = entry.game.view(this.#time.now());
+    return { t: 'state', you: colour, game, opponent: this.#statusOf(entry, other(colour)) };
+  }
+
+  // Whether a player is connected, and if not, when their opponent may claim the game.
+  #statusOf(entry: Entry, colour: Colour): OpponentStatus {
+    const since = entry.offlineSince[colour];
+    if (since === undefined) return { connected: true };
+    if (entry.game.status !== 'started') return { connected: false };
+    return { connected: false, claimableAt: since + entry.game.goneAfterMs(colour) };
+  }
+
+  #sendTo(entry: Entry, colour: Colour, message: ServerMessage): void {
+    for (const socket of entry.sockets[colour]) socket.send(message);
   }
 
   #broadcast(entry: Entry, message: ServerMessage): void {
