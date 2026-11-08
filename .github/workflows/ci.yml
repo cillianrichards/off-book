@@ -1,4 +1,5 @@
-# Lint, type-check and test every push to main, plus pull requests (P0-02).
+# Lint, type-check and test every push to main, plus pull requests (P0-02). The TypeScript and licence
+# jobs also run on Windows, where development happens (P0-05).
 # Actions are pinned to commit SHAs, as Lichess does; the comment gives the release.
 
 name: CI
@@ -18,8 +19,13 @@ permissions:
 
 jobs:
   typescript:
-    name: TypeScript
-    runs-on: ubuntu-latest
+    name: TypeScript (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # A Windows failure must not hide the Linux result, or the reverse.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -78,8 +84,12 @@ jobs:
           OFF_BOOK_STOCKFISH: ${{ runner.temp }}/stockfish/stockfish
 
   licences:
-    name: Licences
-    runs-on: ubuntu-latest
+    name: Licences (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
