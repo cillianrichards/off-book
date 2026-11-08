@@ -43,6 +43,7 @@ The game service is the sole authority on board state and clocks; clients only p
 - **Validation:** server-side legality check using the same rules library as the client, shared as one TypeScript package.
 - **Clocks:** timed on server receipt, with lag compensation capped per move so a player cannot gain time by faking latency.
 - **Live state:** held in memory by the one server process, as lila (Lichess's server) holds it; there is no Redis. A game is saved to PostgreSQL as soon as its status changes, which includes every pairing transition and each side's first move, and otherwise within 30 seconds of a move. A clean shutdown saves every game first and gives the side to move 20 seconds and the other side 10. A crash loses at most the last 30 seconds of moves, and lost clock time is not given back. Off Book promises nothing stronger than Lichess does here.
+- **Storage:** one `Game` row per game, created when the game starts and updated while it is live. Its moves are an array of SAN and each side's clock history is an array of centiseconds on the same row, as lila keeps them on its game document, but without lila's compression, which is not worth it at Off Book's size. No PGN file is stored: PGN is built from the row when asked for, as lila's export does.
 - **Custom start:** every game begins from a FEN, not the standard position. PGN export, the analysis board and any third-party import must use the PGN `SetUp` and `FEN` tags, and this needs testing early because many tools handle it badly.
 - **Events:** emits `game.started` and `game.finished` (result, termination reason, move count, clock data, position id).
 
@@ -133,7 +134,7 @@ The rating model pays more for winning bad positions, so it also pays more for c
 
 - **Targeted pairing:** once opponent ranges are enabled, a narrow range plus a chosen band lets two friends find each other almost on demand. Flag pairs that meet repeatedly, especially where the side with the advantage resigns, flags or blunders early. Add account age and device signals.
 - **Abort shopping:** aborting until a familiar or engine-pessimistic position appears brings opening preparation back. The limit is three consecutive aborts; the counter resets only after a completed game, so resetting it costs a rated result.
-- **Engine assistance:** asynchronous post-game analysis comparing accuracy with rating, run from the stored PGNs.
+- **Engine assistance:** asynchronous post-game analysis comparing accuracy with rating, run from the stored games.
 - **Position farming:** if a position's actual results drift from the calibrated prediction, pull it from the pool in the next version.
 - **Remedy:** confirmed cases void the games and replay the affected ratings.
 
@@ -147,7 +148,7 @@ Every game points at an exact pool version and calibration version; versions and
 | Position | id, pool version, FEN, ply (the earliest any game reached it at), eval, shallow eval, best-move gap, rarity score (share of games reaching it) | Immutable |
 | CalibrationVersion | version, points per pawn (per rating tier once split), published at | Immutable |
 | Seek | id, player, time control, eval band, opponent rating range, created at, status | Short-lived |
-| Game | id, white, black, position id, pool version, calibration version, each player's band, time control, result, termination (including aborted), PGN reference, match id, pairing id (links redraws) | Written once at completion |
+| Game | id, white, black, starting FEN, position id, pool version, calibration version, each player's band, time control, status, moves (SAN), each side's clock history, result, termination (including aborted), match id, pairing id (links redraws) | Created when the game starts; updated while it is live |
 | RatingEvent | game id, player, time control, rating before and after, deviation before and after, offset applied | Append-only |
 | Rating | player, time control, rating, deviation, volatility | Projection, rebuildable from events |
 | User | id, handle, created at, status, consecutive aborts | Mutable |
@@ -175,7 +176,7 @@ TypeScript end to end for everything live, so client and server share one rules 
 | Published pools | Versioned files attached to GitHub releases, loaded into PostgreSQL | The record survives any database being reset or replaced, and costs nothing to host. Pools stay out of git |
 | Migrations | dbmate (MIT), plain SQL files run in order and recorded in the database; forward-only | Two languages share the database, so the schema belongs to neither: SQL reads the same from TypeScript and Python, and dbmate runs as a container inside the local stack |
 | Local stack | Docker Compose running PostgreSQL 18, the version Azure will run; the same file in CI | One command to start, following Lichess's `lila-docker`; local and CI cannot drift apart |
-| Hosting | Azure Container Apps, Azure Database for PostgreSQL, Blob Storage | Managed services; code, CI and backlog on GitHub |
+| Hosting | Azure Container Apps, Azure Database for PostgreSQL | Managed services; code, CI and backlog on GitHub. No Blob Storage, since no PGN file is stored |
 | Checks | GitHub Actions on every push to `main`, on Linux, with the TypeScript and licence jobs also on Windows, where development happens. TypeScript: oxlint with type-aware rules, oxfmt, `tsc` and Node's built-in test runner. Pipeline: Ruff, mypy (strict) and pytest. A licence check holds every installed package to an AGPL-compatible allowlist and every direct dependency to `THIRD_PARTY_LICENCES.md` | Lichess's TypeScript toolchain; Node runs the tests directly with no test framework to maintain |
 
 ## Build phases
@@ -213,7 +214,7 @@ Build the riskiest part first. Whether a pool exists at all is the one question 
 
 **Decided (5 November 2026):** the crawl threshold is 0.05%, the same as the rarity threshold, so the crawl takes no more of Lichess's data than the current rule needs. A higher rarity threshold can be applied later from the store; a lower one means a top-up crawl, which extends the same store and looks up only positions it lacks.
 
-**Decided (8 November 2026):** live play follows lila, Lichess's server, and promises nothing stronger than Lichess does. Live games are held in memory by the one server process, with no Redis (D-01). A game is saved to PostgreSQL as soon as its status changes and otherwise within 30 seconds of a move, as lila's `GameProxy` does. Off Book's pairing transitions, including each side's first move, are status changes, because the first-move timer charges aborts. A clean shutdown saves every game and gives the side to move 20 seconds and the other side 10, as lila does when it stops. A crash loses at most the last 30 seconds of moves, and lost clock time is not given back. Write-through on every move was dropped because it promised more than Lichess does.
+**Decided (8 November 2026):** live play follows lila, Lichess's server, and promises nothing stronger than Lichess does. Live games are held in memory by the one server process, with no Redis (D-01). A game is saved to PostgreSQL as soon as its status changes and otherwise within 30 seconds of a move, as lila's `GameProxy` does. Off Book's pairing transitions, including each side's first move, are status changes, because the first-move timer charges aborts. A clean shutdown saves every game and gives the side to move 20 seconds and the other side 10, as lila does when it stops. A crash loses at most the last 30 seconds of moves, and lost clock time is not given back. Write-through on every move was dropped because it promised more than Lichess does. Each game is one `Game` row, created when the game starts and updated while it is live, with its moves as SAN and each side's clock history on the row, as lila keeps them on its game document, rather than in a table of moves (D-02). No PGN file is stored, so there is no Blob Storage: PGN is built from the row when asked for, as lila's export does.
 
 1. **How long before a seek widens?** Too short and nobody gets the band they asked for; too long and the second player online leaves before the first is matched.
 2. **How do you concentrate players in time?** With one time control and no engine opponents, the number of people online at the same moment decides everything. Scheduled sessions, arenas or notifications when someone is seeking are the usual levers.

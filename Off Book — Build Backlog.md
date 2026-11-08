@@ -49,7 +49,7 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 
 **Hosting and accounts**
 
-- [ ] **P2-01 Azure environments.** Container Apps, Azure Database for PostgreSQL and Blob Storage for staging and production, defined as code and deployed from GitHub Actions. Secrets in Key Vault.
+- [ ] **P2-01 Azure environments.** Container Apps and Azure Database for PostgreSQL for staging and production, defined as code and deployed from GitHub Actions. Secrets in Key Vault.
 - [ ] **P2-02 Sign in with Lichess.** OAuth 2 with PKCE against Lichess (D-09). `User` with Off Book's own id, handle and status; `Identity` links a Lichess account id to it. Off Book issues its own session, and the Lichess token is discarded once the account id is read. A development-only sign-in for the seed's test users (P2-20), refused outside the local stack, so one person can play both sides. *Needs D-17.*
 
 **Rules**
@@ -66,7 +66,7 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 - [ ] **P2-09 Reconnect.** The client rebuilds from the server's move list, never its own.
 - [ ] **P2-10 Abandonment.** The disconnected player's clock runs; after the grace period the opponent may claim a win or a draw.
 - [ ] **P2-11 Outbox.** Outbox table and in-process dispatcher emitting `game.started`, `game.finished` and `game.aborted`. Delivery is at-least-once, so every consumer is idempotent.
-- [ ] **P2-12 Game record.** On completion, the `Game` row with starting FEN, players, time control, result and termination; PGN to Blob Storage. Later phases add the pool, band, pairing, calibration and match fields.
+- [ ] **P2-12 Game record.** The `Game` row is created when the game starts, with starting FEN, players and time control. While the game is played it holds the moves and each side's clock history, and it gets the result and termination when the game ends. No PGN file is stored: PGN is built from the row (P2-18), as lila does (D-02). Later phases add the pool, band, pairing, calibration and match fields.
 - [ ] **P2-13 Challenge links.** A private link carrying time control and starting FEN, the standard position by default, so games can be played before any pairing exists (D-04). Decide whether it survives as a feature.
 
 **Client**
@@ -164,7 +164,7 @@ Exit test: players find games through the lobby alone, and a collusion case can 
 
 These follow launch, in whatever order liquidity and the monthly calibration check dictate. P6-08 arguably belongs before launch (D-14).
 
-- [ ] **P6-01 Engine-assistance analysis.** Asynchronous job over stored PGNs comparing accuracy with rating, raising flags. Runs outside the live process.
+- [ ] **P6-01 Engine-assistance analysis.** Asynchronous job over stored games comparing accuracy with rating, raising flags. Runs outside the live process.
 - [ ] **P6-02 Monthly calibration check.** P4-04's report on Off Book's own games, with an alert when a gap persists.
 - [ ] **P6-03 Calibration vN+1.** Per-tier constants, published for new games only.
 - [ ] **P6-04 Position farming.** Actual against predicted results per position; drifting positions are dropped from the next pool version.
@@ -182,7 +182,7 @@ These follow launch, in whatever order liquidity and the monthly calibration che
 These run alongside Phases 2 to 5 and must be done before launch.
 
 - [ ] **X-01 Observability.** Structured logs; metrics for active games, move latency, WebSocket connections and outbox lag; alerts that reach you.
-- [ ] **X-02 Backups.** PostgreSQL point-in-time restore, proven by actually restoring; soft delete on Blob Storage.
+- [ ] **X-02 Backups.** PostgreSQL point-in-time restore, proven by actually restoring.
 - [ ] **X-03 Load test.** Simulated players against one process, to find its ceiling in concurrent games.
 - [ ] **X-04 Rate limits.** API and WebSocket message limits per connection and per account.
 - [ ] **X-05 Privacy.** UK GDPR privacy notice, lawful basis for device signals, data export and account deletion. Deletion anonymises the user but keeps games and rating events, because opponents' histories depend on them.
@@ -199,7 +199,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 **Contradictions in the architecture**
 
 - [x] **D-01 Live game state.** Decided 8 November 2026: in memory in the one server process, as lila does, with no Redis. A game is saved to PostgreSQL when its status changes and otherwise within 30 seconds of a move, so a crash can lose up to 30 seconds of moves, as on Lichess (P2-08).
-- [ ] **D-02 When `Game` is written.** The data model says once, at completion; write-through means every move is written during play. Either `Game` is mutable while live, or moves get their own table.
+- [x] **D-02 When `Game` is written.** Decided 8 November 2026: when the game starts, then updated while it is live, with its moves and each side's clock history on the row, as lila keeps them on its game document. There is no table of moves, and no PGN file or Blob Storage, because PGN is built from the row (P2-12).
 - [ ] **D-03 Missing entities.** The state machine persists pairings and timers on every transition, but the data model has no `Pairing`. The outbox table is missing too. The outbox is settled in P2-00, `Pairing` by P3-06.
 - [x] **D-04 Pairing before the lobby.** Decided 29 October 2026: challenge links pair players until the lobby exists, first with a starting FEN (P2-13), then with band and side (P3-12).
 
