@@ -8,6 +8,9 @@ import { FakeSocket } from '../testing/fake-socket.ts';
 import { FakeTime } from '../testing/fake-time.ts';
 import { GameService } from './index.ts';
 
+// Time stands still in these tests, so neither clock moves.
+const FULL_CLOCKS = { white: 60_000, black: 60_000, running: false };
+
 interface Table {
   readonly service: GameService;
   readonly time: FakeTime;
@@ -52,6 +55,7 @@ describe('moves (P2-06)', () => {
       san: 'e4',
       uci: 'e2e4',
       fen: 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1',
+      clock: FULL_CLOCKS,
     };
     assert.deepEqual(white.take(), [expected]);
     assert.deepEqual(black.take(), [expected]);
@@ -87,7 +91,7 @@ describe('moves (P2-06)', () => {
     blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
     whiteSays({ t: 'move', ply: 2, uci: 'g2g4' });
     blackSays({ t: 'move', ply: 3, uci: 'd8h4' });
-    const end = { t: 'end', status: 'finished', result: '0-1', termination: 'checkmate' };
+    const end = { t: 'end', status: 'finished', result: '0-1', termination: 'checkmate', clock: FULL_CLOCKS };
     assert.deepEqual(white.of('end'), [end]);
     assert.deepEqual(black.of('end'), [end]);
     assert.equal((await service.view(id))?.status, 'finished');
@@ -106,7 +110,7 @@ describe('abort', () => {
     whiteSays({ t: 'abort' });
     assert.deepEqual(white.take(), [{ t: 'rejected', reason: 'notAllowed', ply: 1 }]);
     blackSays({ t: 'abort' });
-    const end = { t: 'end', status: 'aborted', termination: 'aborted' };
+    const end = { t: 'end', status: 'aborted', termination: 'aborted', clock: FULL_CLOCKS };
     assert.deepEqual(white.take(), [end]);
     assert.deepEqual(black.take(), [end]);
   });
@@ -128,5 +132,49 @@ describe('join', () => {
       clock: { initialSeconds: 600, incrementSeconds: 0 },
     });
     assert.equal(created.ok, false);
+  });
+});
+
+describe('flags found by the server (P2-07)', () => {
+  test('ends the game when the side to move runs out, grace included', async () => {
+    const { time, white, black, whiteSays, blackSays } = await table();
+    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    white.take();
+    black.take();
+    time.advance(601_999);
+    assert.deepEqual(white.take(), []);
+    time.advance(1);
+    const end = {
+      t: 'end',
+      status: 'finished',
+      result: '0-1',
+      termination: 'flag',
+      clock: { white: 0, black: 60_000, running: false },
+    };
+    assert.deepEqual(white.take(), [end]);
+    assert.deepEqual(black.take(), [end]);
+    assert.equal(time.pending, 0);
+  });
+
+  test('a move in time moves the check on to the other side', async () => {
+    const { time, white, whiteSays, blackSays } = await table();
+    whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    time.advance(300_000);
+    whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
+    white.take();
+    time.advance(601_999);
+    assert.deepEqual(white.of('end'), []);
+    time.advance(1);
+    assert.equal(white.of('end')[0]?.result, '1-0');
+  });
+
+  test('no check is left waiting once a game ends some other way', async () => {
+    const { time, whiteSays, blackSays } = await table();
+    for (const [ply, uci] of ['f2f3', 'e7e5', 'g2g4', 'd8h4'].entries()) {
+      (ply % 2 === 0 ? whiteSays : blackSays)({ t: 'move', ply, uci });
+    }
+    assert.equal(time.pending, 0);
   });
 });

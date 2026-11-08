@@ -8,6 +8,7 @@
 
 import { Chess, type Move, type Square } from 'chess.js';
 
+import { hasInsufficientMatingMaterial, materialImbalance, piecesOf } from './material.ts';
 import { readStartFen } from './start-fen.ts';
 
 export type { Square };
@@ -108,6 +109,35 @@ export class ChessGame {
   /** How the game ended by itself, or undefined while it can go on. */
   get outcome(): Outcome | undefined {
     return this.#outcome;
+  }
+
+  /**
+   * Whether the side not to move could never mate, so that the side to move running out of time or
+   * abandoning the game gives a draw, not a loss (P2-07, P2-10). As scalachess decides it: that side has
+   * insufficient mating material now, or every legal move of the side to move leaves it with none, or
+   * mates, or stalemates.
+   */
+  get opponentHasInsufficientMaterial(): boolean {
+    const fen = this.#chess.fen();
+    const opponent = this.#chess.turn() === 'w' ? 'b' : 'w';
+    if (hasInsufficientMatingMaterial(piecesOf(fen), opponent)) return true;
+    const moves = this.#chess.moves({ verbose: true });
+    if (moves.length === 0) return false;
+    const scratch = new Chess(fen);
+    return moves.every(move => {
+      scratch.move(move.san, { strict: true });
+      const noWin =
+        scratch.isCheckmate() ||
+        scratch.isStalemate() ||
+        hasInsufficientMatingMaterial(piecesOf(scratch.fen()), scratch.turn());
+      scratch.undo();
+      return noWin;
+    });
+  }
+
+  /** White's material minus Black's, in pawns. */
+  get materialImbalance(): number {
+    return materialImbalance(piecesOf(this.#chess.fen()));
   }
 
   /** Whether the player to move may claim a draw by threefold repetition. */

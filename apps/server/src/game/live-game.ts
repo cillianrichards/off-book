@@ -3,6 +3,19 @@
 
 import { ChessGame, type Colour, type MoveIntent, type Termination } from '@off-book/rules';
 
+import {
+  type ClockState,
+  centisOfMillis,
+  flagDueAt,
+  isRunning,
+  newClock,
+  outOfTime,
+  remainingAt,
+  start,
+  step,
+  stop,
+} from './clock.ts';
+
 export type GameStatus = 'started' | 'finished' | 'aborted';
 export type Result = '1-0' | '0-1' | '1/2-1/2';
 /** How a game ended: by the rules (P2-03), on time, by abandonment, or aborted before it began. */
@@ -30,6 +43,8 @@ export interface NewGame {
 export interface ProposedMove {
   readonly ply: number;
   readonly uci: string;
+  /** The network lag the client reports, in milliseconds, for lag compensation (P2-07). */
+  readonly lagMs?: number;
 }
 
 export type MoveOutcome =
@@ -39,18 +54,23 @@ export type MoveOutcome =
       readonly san: string;
       readonly uci: string;
       readonly fen: string;
+      readonly clock: ClockReading;
       readonly ending?: Ending;
     }
+  /** The mover's time had run out before the move arrived: it is not played, and they lose on time. */
+  | { readonly kind: 'flagged'; readonly ending: Ending }
   /** The same move again for a ply already played by this player: a resend, which changes nothing. */
   | { readonly kind: 'duplicate'; readonly ply: number }
   | { readonly kind: 'rejected'; readonly reason: 'gameOver' | 'stale' | 'notYourTurn' | 'illegal' };
 
-export interface ClockView extends ClockSettings {
-  /** Each side's remaining time in centiseconds, as it stands when the view is taken. */
+export interface ClockReading {
+  /** Each side's remaining time in centiseconds, as it stands when read. */
   readonly white: number;
   readonly black: number;
   readonly running: boolean;
 }
+
+export interface ClockView extends ClockSettings, ClockReading {}
 
 export interface GameView {
   readonly id: string;
@@ -85,6 +105,9 @@ export class LiveGame {
   readonly #chess: ChessGame;
   // Whoever moves first from the starting FEN, which may be Black (P2-04).
   readonly #firstMover: Colour;
+  #clock: ClockState;
+  // Each side's remaining time after each of its moves, in centiseconds, as lila records it.
+  readonly #clockHistory: Record<Colour, number[]> = { white: [], black: [] };
   #ending: Ending | undefined;
   #lastMoveAt: number | undefined;
   #finishedAt: number | undefined;
@@ -102,6 +125,7 @@ export class LiveGame {
     this.clock = clock;
     this.createdAt = createdAt;
     this.#firstMover = chess.turn;
+    this.#clock = newClock(clock, chess.turn);
   }
 
   static create(input: NewGame): Created {
@@ -147,6 +171,29 @@ export class LiveGame {
     return this.#finishedAt;
   }
 
+  get clockHistory(): Readonly<Record<Colour, readonly number[]>> {
+    return { white: [...this.#clockHistory.white], black: [...this.#clockHistory.black] };
+  }
+
+  clockAt(now: number): ClockReading {
+    return {
+      white: remainingAt(this.#clock, 'white', now),
+      black: remainingAt(this.#clock, 'black', now),
+      running: isRunning(this.#clock),
+    };
+  }
+
+  /** When the server should next check for a flag, or undefined while no clock is running (P2-07). */
+  get flagCheckDueAt(): number | undefined {
+    return this.#ending === undefined ? flagDueAt(this.#clock) : undefined;
+  }
+
+  /** Ends the game if the side to move is out of time, allowing grace for a move on its way. */
+  flagIfOutOfTime(now: number): Ending | undefined {
+    if (this.#ending !== undefined || !outOfTime(this.#clock, this.turn, now, true)) return undefined;
+    return this.#flag(now);
+  }
+
   colourOf(userId: string): Colour | undefined {
     if (userId === this.players.white) return 'white';
     if (userId === this.players.black) return 'black';
@@ -175,19 +222,28 @@ export class LiveGame {
     }
     if (colour !== this.turn) return { kind: 'rejected', reason: 'notYourTurn' };
     const intent = parseUci(proposed.uci);
-    if (intent === undefined) return { kind: 'rejected', reason: 'illegal' };
-    const played = this.#chess.play(intent);
-    if (!played.ok) return { kind: 'rejected', reason: 'illegal' };
+    if (intent === undefined || !this.#chess.isLegal(intent)) return { kind: 'rejected', reason: 'illegal' };
 
-    this.#lastMoveAt = now;
-    const ply = this.ply - 1;
+    // Timed on receipt: a move that arrives after its player's time ran out is not played (P2-07).
+    const lagCs = proposed.lagMs === undefined ? undefined : centisOfMillis(proposed.lagMs);
+    if (step(this.#clock, now, lagCs, true).flagged) return { kind: 'flagged', ending: this.#flag(now) };
+
+    const played = this.#chess.play(intent);
+    if (!played.ok) throw new Error(`${proposed.uci} was legal but could not be played`);
     const outcome = this.#chess.outcome;
-    if (outcome === undefined)
-      return { kind: 'moved', ply, san: played.san, uci: played.uci, fen: this.#chess.fen };
+    this.#clock = step(this.#clock, now, lagCs, outcome === undefined).clock;
+    // The clock starts only once each side has moved, as on Lichess.
+    if (this.ply === 2 && outcome === undefined) this.#clock = start(this.#clock, now);
+    this.#clockHistory[colour].push(this.#clock.remaining[colour]);
+    this.#lastMoveAt = now;
+
+    const ply = this.ply - 1;
+    const moved = { kind: 'moved', ply, san: played.san, uci: played.uci, fen: this.#chess.fen } as const;
+    if (outcome === undefined) return { ...moved, clock: this.clockAt(now) };
     const result: Result =
       outcome.termination !== 'checkmate' ? '1/2-1/2' : outcome.winner === 'white' ? '1-0' : '0-1';
     const ending = this.#end({ status: 'finished', result, termination: outcome.termination }, now);
-    return { kind: 'moved', ply, san: played.san, uci: played.uci, fen: this.#chess.fen, ending };
+    return { ...moved, clock: this.clockAt(now), ending };
   }
 
   /** Aborts the game, which only a player who has not yet made their first move may do. */
@@ -196,8 +252,7 @@ export class LiveGame {
     return this.#end({ status: 'aborted', termination: 'aborted' }, now);
   }
 
-  view(_now: number): GameView {
-    const initialCs = this.clock.initialSeconds * 100;
+  view(now: number): GameView {
     return {
       id: this.id,
       players: this.players,
@@ -209,7 +264,7 @@ export class LiveGame {
       status: this.status,
       ...(this.#ending?.status === 'finished' ? { result: this.#ending.result } : {}),
       ...(this.#ending === undefined ? {} : { termination: this.#ending.termination }),
-      clock: { ...this.clock, white: initialCs, black: initialCs, running: false },
+      clock: { ...this.clock, ...this.clockAt(now) },
     };
   }
 
@@ -217,7 +272,22 @@ export class LiveGame {
     return ply % 2 === 0 ? this.#firstMover : this.#firstMover === 'white' ? 'black' : 'white';
   }
 
+  // The side to move has run out of time. They lose, unless their opponent could never have mated, as
+  // lila's finisher decides: a flag against insufficient material is a draw.
+  #flag(now: number): Ending {
+    const winner: Colour = this.turn === 'white' ? 'black' : 'white';
+    const result: Result = this.#chess.opponentHasInsufficientMaterial
+      ? '1/2-1/2'
+      : winner === 'white'
+        ? '1-0'
+        : '0-1';
+    const remaining = { ...this.#clock.remaining, [this.turn]: 0 };
+    this.#clock = { ...this.#clock, remaining, runningSince: undefined };
+    return this.#end({ status: 'finished', result, termination: 'flag' }, now);
+  }
+
   #end(ending: Ending, now: number): Ending {
+    this.#clock = stop(this.#clock, now);
     this.#ending = ending;
     this.#finishedAt = now;
     return ending;

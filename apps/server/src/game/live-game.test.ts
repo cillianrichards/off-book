@@ -69,6 +69,7 @@ describe('move (P2-06)', () => {
       san: 'e4',
       uci: 'e2e4',
       fen: 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1',
+      clock: { white: 60_000, black: 60_000, running: false },
     });
     assert.equal(game.ply, 1);
     assert.equal(game.turn, 'black');
@@ -130,6 +131,7 @@ describe('move (P2-06)', () => {
       san: 'Qh4#',
       uci: 'd8h4',
       fen: 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3',
+      clock: { white: 60_000, black: 60_000, running: false },
       ending: { status: 'finished', result: '0-1', termination: 'checkmate' },
     });
     assert.equal(game.status, 'finished');
@@ -183,5 +185,83 @@ describe('abort', () => {
     assert.equal(game.movesBy('white'), 0);
     assert.equal(game.abort('black', NOW), undefined);
     assert.ok(game.abort('white', NOW));
+  });
+});
+
+describe('clocks (P2-07)', () => {
+  // 10+0: 60,000 centiseconds each.
+  const at = (seconds: number) => NOW + seconds * 1000;
+
+  test('do not run until each side has moved once', () => {
+    const game = newGame();
+    game.move('white', { ply: 0, uci: 'e2e4' }, at(30));
+    const second = game.move('black', { ply: 1, uci: 'e7e5' }, at(70));
+    assert.equal(second.kind === 'moved' && second.clock.running, true);
+    assert.deepEqual(game.clockAt(at(70)), { white: 60_000, black: 60_000, running: true });
+    assert.equal(game.clockAt(at(80)).white, 59_000);
+  });
+
+  test('time each move on the server’s receipt and record each side’s history', () => {
+    const game = newGame();
+    play(game, ['e2e4', 'e7e5']);
+    game.move('white', { ply: 2, uci: 'g1f3' }, at(12.34));
+    game.move('black', { ply: 3, uci: 'b8c6' }, at(20.34));
+    assert.deepEqual(game.clockAt(at(20.34)), { white: 60_000 - 1234, black: 60_000 - 800, running: true });
+    assert.deepEqual(game.clockHistory, { white: [60_000, 60_000 - 1234], black: [60_000, 60_000 - 800] });
+  });
+
+  test('give back reported lag, within the quota', () => {
+    const game = newGame();
+    play(game, ['e2e4', 'e7e5']);
+    game.move('white', { ply: 2, uci: 'g1f3', lagMs: 400 }, at(5));
+    assert.equal(game.clockAt(at(5)).white, 60_000 - 500 + 40);
+  });
+
+  test('a move arriving after its player ran out of time is not played, and loses on time', () => {
+    const game = newGame();
+    play(game, ['e2e4', 'e7e5']);
+    assert.deepEqual(game.move('white', { ply: 2, uci: 'g1f3' }, at(601)), {
+      kind: 'flagged',
+      ending: { status: 'finished', result: '0-1', termination: 'flag' },
+    });
+    assert.equal(game.ply, 2);
+    assert.deepEqual(game.clockAt(at(700)), { white: 0, black: 60_000, running: false });
+  });
+
+  test('the server’s check flags the side to move only after the grace', () => {
+    const game = newGame();
+    play(game, ['e2e4', 'e7e5']);
+    // White's quota starts at 3 seconds, so the grace is the 2-second maximum.
+    assert.equal(game.flagCheckDueAt, at(602));
+    assert.equal(game.flagIfOutOfTime(at(601.99)), undefined);
+    assert.deepEqual(game.flagIfOutOfTime(at(602)), {
+      status: 'finished',
+      result: '0-1',
+      termination: 'flag',
+    });
+    assert.equal(game.flagCheckDueAt, undefined);
+  });
+
+  test('a flag against a side that cannot mate is a draw', () => {
+    // White has king and queen, Black king and knight, which cannot mate a queen.
+    const game = newGame('7k/8/6Q1/8/3K4/8/1n6/8 w - - 0 1');
+    play(game, ['d4e4', 'b2d1']);
+    assert.deepEqual(game.flagIfOutOfTime(at(602)), {
+      status: 'finished',
+      result: '1/2-1/2',
+      termination: 'flag',
+    });
+  });
+
+  test('the view counts the running clock down', () => {
+    const game = newGame();
+    play(game, ['e2e4', 'e7e5']);
+    assert.deepEqual(game.view(at(90)).clock, {
+      initialSeconds: 600,
+      incrementSeconds: 0,
+      white: 51_000,
+      black: 60_000,
+      running: true,
+    });
   });
 });

@@ -127,9 +127,13 @@ describe('WebSocket', () => {
       assert.equal((await white.nextOf('move')).uci, uci);
       assert.equal((await black.nextOf('move')).uci, uci);
     }
-    const end = { t: 'end', status: 'finished', result: '0-1', termination: 'checkmate' };
-    assert.deepEqual(await white.nextOf('end'), end);
-    assert.deepEqual(await black.nextOf('end'), end);
+    for (const player of [white, black]) {
+      const { status, result, termination } = await player.nextOf('end');
+      assert.deepEqual(
+        { status, result, termination },
+        { status: 'finished', result: '0-1', termination: 'checkmate' },
+      );
+    }
     await Promise.all([white.close(), black.close()]);
   });
 

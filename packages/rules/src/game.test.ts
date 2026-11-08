@@ -191,6 +191,30 @@ describe('endings', () => {
   });
 });
 
+describe('opponentHasInsufficientMaterial', () => {
+  test('is true when the side not to move cannot mate now', () => {
+    assert.equal(start('7k/8/6Q1/8/3K4/8/1n6/8 w - - 0 1').opponentHasInsufficientMaterial, true); // knight against queen
+    assert.equal(start('7k/8/8/8/3K4/8/8/6Q1 b - - 0 1').opponentHasInsufficientMaterial, false); // queen
+    assert.equal(start('7k/8/8/5R2/3K4/8/1n6/8 w - - 0 1').opponentHasInsufficientMaterial, false); // knight against rook
+  });
+
+  test('looks one move ahead, as scalachess does', () => {
+    // White's only legal move takes Black's last pawn, so Black can never mate.
+    assert.equal(start('8/8/8/8/8/2k5/p7/K7 w - - 0 1').opponentHasInsufficientMaterial, true);
+    // With a pawn move to play instead, Black keeps its pawn.
+    assert.equal(start('8/8/8/8/8/2k5/p6P/K7 w - - 0 1').opponentHasInsufficientMaterial, false);
+  });
+});
+
+describe('materialImbalance', () => {
+  test('counts the position on the board', () => {
+    const game = start('4k3/8/8/8/8/8/3r4/R3K3 w - - 0 1');
+    assert.equal(game.materialImbalance, 0);
+    playAll(game, ['e1d2']);
+    assert.equal(game.materialImbalance, 5);
+  });
+});
+
 describe('ChessGame.replay', () => {
   test('rebuilds a game from its starting FEN and moves', () => {
     const played = start(STANDARD_FEN);

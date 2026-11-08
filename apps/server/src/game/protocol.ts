@@ -3,12 +3,15 @@
 
 import type { Colour } from '@off-book/rules';
 
-import type { GameStatus, GameTermination, GameView, Result } from './live-game.ts';
+import type { ClockReading, GameStatus, GameTermination, GameView, Result } from './live-game.ts';
 
 export type ClientMessage =
   | { readonly t: 'ping' }
-  /** A move meant for `ply`, the number of moves already played, so a resend is harmless (P2-06). */
-  | { readonly t: 'move'; readonly ply: number; readonly uci: string }
+  /**
+   * A move meant for `ply`, the number of moves already played, so a resend is harmless (P2-06), with
+   * the network lag the client measures, in milliseconds, for lag compensation (P2-07).
+   */
+  | { readonly t: 'move'; readonly ply: number; readonly uci: string; readonly lag?: number }
   | { readonly t: 'abort' };
 
 export type Rejection = 'badMessage' | 'gameOver' | 'stale' | 'notYourTurn' | 'illegal' | 'notAllowed';
@@ -22,12 +25,14 @@ export type ServerMessage =
       readonly san: string;
       readonly uci: string;
       readonly fen: string;
+      readonly clock: ClockReading;
     }
   | {
       readonly t: 'end';
       readonly status: Exclude<GameStatus, 'started'>;
       readonly result?: Result;
       readonly termination: GameTermination;
+      readonly clock: ClockReading;
     }
   /** A resent move that was already played: nothing changed. */
   | { readonly t: 'ack'; readonly ply: number }
@@ -36,6 +41,8 @@ export type ServerMessage =
   | { readonly t: 'pong' };
 
 const UCI = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
+// A reported lag beyond a minute is not lag; compensation is capped far below this anyway.
+const MAX_LAG_MS = 60_000;
 // Lichess's limit on the length of a game; a ply beyond it cannot be a real one.
 const MAX_PLY = 600;
 
@@ -54,10 +61,12 @@ export function parseClientMessage(text: string): ClientMessage | undefined {
     case 'abort':
       return { t: 'abort' };
     case 'move': {
-      const { ply, uci } = value as { ply?: unknown; uci?: unknown };
+      const { ply, uci, lag } = value as { ply?: unknown; uci?: unknown; lag?: unknown };
       if (!Number.isInteger(ply) || (ply as number) < 0 || (ply as number) > MAX_PLY) return undefined;
       if (typeof uci !== 'string' || !UCI.test(uci)) return undefined;
-      return { t: 'move', ply: ply as number, uci };
+      if (lag === undefined) return { t: 'move', ply: ply as number, uci };
+      if (typeof lag !== 'number' || !Number.isFinite(lag) || lag < 0 || lag > MAX_LAG_MS) return undefined;
+      return { t: 'move', ply: ply as number, uci, lag };
     }
     default:
       return undefined;

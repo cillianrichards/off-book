@@ -4,7 +4,7 @@
 import type { Colour } from '@off-book/rules';
 
 import type { Log } from '../log.ts';
-import type { Time } from '../time.ts';
+import type { Time, Timer } from '../time.ts';
 import { newGameId } from './ids.ts';
 import { type ClockSettings, type Ending, type GameView, LiveGame } from './live-game.ts';
 import { type ClientMessage, parseClientMessage, type ServerMessage } from './protocol.ts';
@@ -44,6 +44,8 @@ export interface GameServiceOptions {
 interface Entry {
   readonly game: LiveGame;
   readonly sockets: Record<Colour, Set<PlayerSocket>>;
+  /** The server's own check for the side to move's flag (P2-07). */
+  flagCheck?: Timer;
 }
 
 export class GameService {
@@ -100,14 +102,16 @@ export class GameService {
         socket.send({ t: 'pong' });
         break;
       case 'move': {
-        const outcome = game.move(colour, message, now);
+        const outcome = game.move(colour, { ply: message.ply, uci: message.uci, lagMs: message.lag }, now);
         if (outcome.kind === 'duplicate') socket.send({ t: 'ack', ply: outcome.ply });
         else if (outcome.kind === 'rejected')
           socket.send({ t: 'rejected', reason: outcome.reason, ply: game.ply });
+        else if (outcome.kind === 'flagged') this.#finish(entry, outcome.ending);
         else {
-          const { ply, san, uci, fen } = outcome;
-          this.#broadcast(entry, { t: 'move', ply, san, uci, fen });
+          const { ply, san, uci, fen, clock } = outcome;
+          this.#broadcast(entry, { t: 'move', ply, san, uci, fen, clock });
           if (outcome.ending !== undefined) this.#finish(entry, outcome.ending);
+          else this.#scheduleFlagCheck(entry);
         }
         break;
       }
@@ -120,9 +124,23 @@ export class GameService {
     }
   }
 
+  // Flags are found by the server, not left to the clients (P2-07): a timer fires when the side to move
+  // would be out of time, grace included, and checks again in case a move has arrived since.
+  #scheduleFlagCheck(entry: Entry): void {
+    entry.flagCheck?.cancel();
+    const due = entry.game.flagCheckDueAt;
+    if (due === undefined) return;
+    entry.flagCheck = this.#time.after(due - this.#time.now(), () => {
+      const ending = entry.game.flagIfOutOfTime(this.#time.now());
+      if (ending === undefined) this.#scheduleFlagCheck(entry);
+      else this.#finish(entry, ending);
+    });
+  }
+
   #finish(entry: Entry, ending: Ending): void {
+    entry.flagCheck?.cancel();
     this.#log.info('game ended', { game: entry.game.id, ...ending });
-    this.#broadcast(entry, { t: 'end', ...ending });
+    this.#broadcast(entry, { t: 'end', ...ending, clock: entry.game.clockAt(this.#time.now()) });
   }
 
   #broadcast(entry: Entry, message: ServerMessage): void {

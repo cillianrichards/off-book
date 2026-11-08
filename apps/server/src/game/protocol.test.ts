@@ -42,6 +42,9 @@ test('refuses anything that is not a client message', () => {
     '{"t":"move","ply":0,"uci":"e2e9"}',
     '{"t":"move","ply":0,"uci":"e7e8k"}',
     '{"t":"move","ply":0}',
+    '{"t":"move","ply":0,"uci":"e2e4","lag":-1}',
+    '{"t":"move","ply":0,"uci":"e2e4","lag":"40"}',
+    '{"t":"move","ply":0,"uci":"e2e4","lag":60001}',
   ]) {
     assert.equal(parseClientMessage(text), undefined, text);
   }
