@@ -42,7 +42,7 @@ The game service is the sole authority on board state and clocks; clients only p
 - **Connection:** one WebSocket per player. On reconnect the client resyncs from the server's move list, never its own.
 - **Validation:** server-side legality check using the same rules library as the client, shared as one TypeScript package.
 - **Clocks:** timed on server receipt, with lag compensation capped per move so a player cannot gain time by faking latency.
-- **Live state:** move list, clocks and position id held in Redis, so a process restart loses no games. On completion the game goes to PostgreSQL and the PGN to blob storage.
+- **Live state:** held in memory by the one server process, as lila (Lichess's server) holds it; there is no Redis. A game is saved to PostgreSQL as soon as its status changes, which includes every pairing transition and each side's first move, and otherwise within 30 seconds of a move. A clean shutdown saves every game first and gives the side to move 20 seconds and the other side 10. A crash loses at most the last 30 seconds of moves, and lost clock time is not given back. Off Book promises nothing stronger than Lichess does here.
 - **Custom start:** every game begins from a FEN, not the standard position. PGN export, the analysis board and any third-party import must use the PGN `SetUp` and `FEN` tags, and this needs testing early because many tools handle it badly.
 - **Events:** emits `game.started` and `game.finished` (result, termination reason, move count, clock data, position id).
 
@@ -124,7 +124,7 @@ A redraw is a player's first abort in a pairing and loops back to a new position
 - **Abort limit.** A player at three consecutive aborts may still use an unused redraw, but the abort control is disabled; they must play that game.
 - **Who may abort.** Only a player who has not yet made their first move. Once Black has moved, the game can only end by a chess result.
 - **Disconnection.** Before Black's first move, a disconnected player simply runs out their first-move timer. During play, their clock keeps running; after a grace period the opponent may claim a win or a draw (abandonment). A flag still loses unless the opponent has insufficient material, in which case it is a draw.
-- **Server restarts.** States and timers are written to PostgreSQL on every transition, so a restarted process resumes each pairing where it was. Clock time lost to the restart is credited back to both players.
+- **Server restarts.** Every transition is a status change, so states and timer deadlines are saved to PostgreSQL as soon as it happens, and a restarted process resumes each pairing where it was. A first move is never lost to a crash, so the first-move timer cannot charge an abort the player did not earn. As on Lichess, a clean shutdown gives the side to move 20 seconds and the other side 10, and clock time lost to a crash is not given back.
 - **Parameters to set:** first-move timer length, disconnection grace period, and how long a seek waits before widening.
 
 ## Integrity
@@ -167,7 +167,7 @@ TypeScript end to end for everything live, so client and server share one rules 
 | Post-game analysis | Stockfish compiled to WebAssembly (GPL-3.0), in the browser | Analysis costs no server CPU |
 | Rules | chess.js (BSD-2-Clause) in a shared package | Identical move validation on client and server |
 | Live server | Off Book's own: one Node.js process for API, WebSocket games, lobby and rating; lila is not forked | One thing to deploy, monitor and debug. The server is where Off Book differs from Lichess, and lila is Scala with MongoDB and Redis |
-| Live state | In memory, every move written through to PostgreSQL | A restart reloads games in progress; Redis only once there are several instances |
+| Live state | In memory, saved to PostgreSQL on every status change and otherwise within 30 seconds of a move, as lila does | A restart reloads games in progress, losing at most 30 seconds of moves after a crash; Redis only once there are several instances |
 | Accounts | Sign in with Lichess (OAuth 2 with PKCE); Off Book's own user ids and sessions, with each Lichess account linked through `Identity` and its token discarded after sign-in | Most players will already have a Lichess account, and no passwords are held. Because nothing but `Identity` refers to Lichess, another sign-in method can be added later without touching games or ratings |
 | Store | PostgreSQL | Relational integrity across versions and games |
 | Events | Transactional outbox table in PostgreSQL | No broker to run |
@@ -212,6 +212,8 @@ Build the riskiest part first. Whether a pool exists at all is the one question 
 **Decided (4 November 2026):** the masters crawl is kept apart within the pipeline, not in a separate codebase. Its module is the pipeline's only network code and nothing else imports it, which a test enforces; its only output is the store of counts, and everything after it, including deriving candidates at a new threshold, reads the store alone, so the rest of the pipeline works with the crawler deleted. Each crawl run records its threshold, outcome and the commit of the code that ran it in the store, and the commit that runs the full crawl is tagged. The store is kept on the developer's machine, outside git and unpublished: it is the only copy, so backing it up is the developer's job, and losing it means crawling again.
 
 **Decided (5 November 2026):** the crawl threshold is 0.05%, the same as the rarity threshold, so the crawl takes no more of Lichess's data than the current rule needs. A higher rarity threshold can be applied later from the store; a lower one means a top-up crawl, which extends the same store and looks up only positions it lacks.
+
+**Decided (8 November 2026):** live play follows lila, Lichess's server, and promises nothing stronger than Lichess does. Live games are held in memory by the one server process, with no Redis (D-01). A game is saved to PostgreSQL as soon as its status changes and otherwise within 30 seconds of a move, as lila's `GameProxy` does. Off Book's pairing transitions, including each side's first move, are status changes, because the first-move timer charges aborts. A clean shutdown saves every game and gives the side to move 20 seconds and the other side 10, as lila does when it stops. A crash loses at most the last 30 seconds of moves, and lost clock time is not given back. Write-through on every move was dropped because it promised more than Lichess does.
 
 1. **How long before a seek widens?** Too short and nobody gets the band they asked for; too long and the second player online leaves before the first is matched.
 2. **How do you concentrate players in time?** With one time control and no engine opponents, the number of people online at the same moment decides everything. Scheduled sessions, arenas or notifications when someone is seeking are the usual levers.

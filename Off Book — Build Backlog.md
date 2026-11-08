@@ -62,7 +62,7 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 - [ ] **P2-05 Server skeleton.** One Node.js process with HTTP API, WebSocket endpoint, and module boundaries for game, pairing, lobby, rating and fair play.
 - [ ] **P2-06 Authoritative moves.** The server validates every proposed move and rejects illegal or out-of-turn ones. Each intent carries its move number, so a resend is harmless.
 - [ ] **P2-07 Server clocks.** Timed on server receipt, lag compensation capped per move, flags detected on the server. A flag against insufficient material is a draw.
-- [ ] **P2-08 Write-through persistence.** Each move and transition commits to PostgreSQL with the state change. Done when killing the process mid-game resumes every game and credits the lost time to both players.
+- [ ] **P2-08 Persistence.** Live games are held in memory, as lila does. Each game is saved to PostgreSQL as soon as its status changes, and otherwise within 30 seconds of a move. A clean shutdown saves every game and gives the side to move 20 seconds and the other side 10; lost clock time is not otherwise given back (D-01). Done when a clean restart resumes every game with that allowance, and killing the process mid-game resumes every game from its last save.
 - [ ] **P2-09 Reconnect.** The client rebuilds from the server's move list, never its own.
 - [ ] **P2-10 Abandonment.** The disconnected player's clock runs; after the grace period the opponent may claim a win or a draw.
 - [ ] **P2-11 Outbox.** Outbox table and in-process dispatcher emitting `game.started`, `game.finished` and `game.aborted`. Delivery is at-least-once, so every consumer is idempotent.
@@ -198,7 +198,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 
 **Contradictions in the architecture**
 
-- [ ] **D-01 Live game state.** The game service section keeps it in Redis; the tech stack keeps it in memory with write-through to PostgreSQL, and Redis only for several instances. The second fits one developer.
+- [x] **D-01 Live game state.** Decided 8 November 2026: in memory in the one server process, as lila does, with no Redis. A game is saved to PostgreSQL when its status changes and otherwise within 30 seconds of a move, so a crash can lose up to 30 seconds of moves, as on Lichess (P2-08).
 - [ ] **D-02 When `Game` is written.** The data model says once, at completion; write-through means every move is written during play. Either `Game` is mutable while live, or moves get their own table.
 - [ ] **D-03 Missing entities.** The state machine persists pairings and timers on every transition, but the data model has no `Pairing`. The outbox table is missing too. The outbox is settled in P2-00, `Pairing` by P3-06.
 - [x] **D-04 Pairing before the lobby.** Decided 29 October 2026: challenge links pair players until the lobby exists, first with a starting FEN (P2-13), then with band and side (P3-12).
