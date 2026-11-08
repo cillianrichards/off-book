@@ -45,7 +45,7 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 
 **Design first**
 
-- [ ] **P2-00 Fix the architecture doc.** Resolve D-01, D-02 and the outbox half of D-03, and update the document. Blocks the rest of Phase 2.
+- [x] **P2-00 Fix the architecture doc.** Resolve D-01, D-02 and the outbox half of D-03, and update the document. Blocks the rest of Phase 2.
 
 **Hosting and accounts**
 
@@ -65,7 +65,7 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 - [ ] **P2-08 Persistence.** Live games are held in memory, as lila does. Each game is saved to PostgreSQL as soon as its status changes, and otherwise within 30 seconds of a move. A clean shutdown saves every game and gives the side to move 20 seconds and the other side 10; lost clock time is not otherwise given back (D-01). Done when a clean restart resumes every game with that allowance, and killing the process mid-game resumes every game from its last save.
 - [ ] **P2-09 Reconnect.** The client rebuilds from the server's move list, never its own.
 - [ ] **P2-10 Abandonment.** The disconnected player's clock runs; after the grace period the opponent may claim a win or a draw.
-- [ ] **P2-11 Outbox.** Outbox table and in-process dispatcher emitting `game.started`, `game.finished` and `game.aborted`. Delivery is at-least-once, so every consumer is idempotent.
+- [ ] **P2-11 Game events.** `game.started`, `game.finished` and `game.aborted`, published within the process after the change is saved. No outbox, as in lila (D-03).
 - [ ] **P2-12 Game record.** The `Game` row is created when the game starts, with starting FEN, players and time control. While the game is played it holds the moves and each side's clock history, and it gets the result and termination when the game ends. No PGN file is stored: PGN is built from the row (P2-18), as lila does (D-02). Later phases add the pool, band, pairing, calibration and match fields.
 - [ ] **P2-13 Challenge links.** A private link carrying time control and starting FEN, the standard position by default, so games can be played before any pairing exists (D-04). Decide whether it survives as a feature.
 
@@ -128,9 +128,9 @@ Exit test: on Lichess 10+0 games, actual score tracks predicted score in every e
 - [ ] **P4-07 Glicko-2 core.** Pure function of prior ratings, result, offset and calibration version, with no I/O. Tested against Glickman's published worked example. *Needs D-10, D-11.*
 - [ ] **P4-08 Offset in the expected score.** P4-01's offset, clamped by P4-02, enters only the expected-score term.
 - [ ] **P4-09 New-player defaults.** Initial rating, deviation and volatility, and the system constant τ.
-- [ ] **P4-10 Rating events.** Append-only `RatingEvent`, unique on game and player, so a redelivered event cannot rate a game twice.
+- [ ] **P4-10 Rating events.** Append-only `RatingEvent`, unique on game and player, so no game can be rated twice.
 - [ ] **P4-11 Rating projection.** `Rating` rebuilt from events, with a command that rebuilds and compares against the live table.
-- [ ] **P4-12 Rating consumer.** Consumes `game.finished` with the calibration version pinned on the game; ignores `game.aborted`.
+- [ ] **P4-12 Rating on finish.** When a game finishes, the result is saved, the game is rated with the calibration version pinned on it, and then `game.finished` is announced, following lila's finisher. Aborted games are never rated. A crash between saving and rating leaves the game unrated, as on Lichess (D-03).
 - [ ] **P4-13 Separate pools.** Ratings keyed by player and time control; nothing imported from other sites.
 - [ ] **P4-14 High-deviation restriction.** Players above a deviation threshold can only take the bands nearest Level, enforced in pairing.
 - [ ] **P4-15 Rating explanation.** On the reveal screen and game page: side, eval, points and expected score. It must show the number Glicko-2 actually used (D-11).
@@ -181,7 +181,7 @@ These follow launch, in whatever order liquidity and the monthly calibration che
 
 These run alongside Phases 2 to 5 and must be done before launch.
 
-- [ ] **X-01 Observability.** Structured logs; metrics for active games, move latency, WebSocket connections and outbox lag; alerts that reach you.
+- [ ] **X-01 Observability.** Structured logs; metrics for active games, move latency and WebSocket connections; alerts that reach you.
 - [ ] **X-02 Backups.** PostgreSQL point-in-time restore, proven by actually restoring.
 - [ ] **X-03 Load test.** Simulated players against one process, to find its ceiling in concurrent games.
 - [ ] **X-04 Rate limits.** API and WebSocket message limits per connection and per account.
@@ -200,7 +200,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 
 - [x] **D-01 Live game state.** Decided 8 November 2026: in memory in the one server process, as lila does, with no Redis. A game is saved to PostgreSQL when its status changes and otherwise within 30 seconds of a move, so a crash can lose up to 30 seconds of moves, as on Lichess (P2-08).
 - [x] **D-02 When `Game` is written.** Decided 8 November 2026: when the game starts, then updated while it is live, with its moves and each side's clock history on the row, as lila keeps them on its game document. There is no table of moves, and no PGN file or Blob Storage, because PGN is built from the row (P2-12).
-- [ ] **D-03 Missing entities.** The state machine persists pairings and timers on every transition, but the data model has no `Pairing`. The outbox table is missing too. The outbox is settled in P2-00, `Pairing` by P3-06.
+- [ ] **D-03 Missing entities.** The state machine persists pairings and timers on every transition, but the data model has no `Pairing`, which P3-06 settles. The outbox half was decided on 8 November 2026: there is no outbox, as in lila (P2-11).
 - [x] **D-04 Pairing before the lobby.** Decided 29 October 2026: challenge links pair players until the lobby exists, first with a starting FEN (P2-13), then with band and side (P3-12).
 
 **Numbers to set**

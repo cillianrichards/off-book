@@ -19,7 +19,7 @@ Where the product is still undecided, this design assumes the following. Each is
 
 &#91;embedded content: system architecture · online services, data, offline pipeline\]
 
-Matchmaking draws a position from the catalogue and hands the pairing to the game service; when a game ends, the rating and fair-play services consume the event. Everything the rating maths depends on is produced offline and pinned by version.
+Matchmaking draws a position from the catalogue and hands the pairing to the game service; when a game ends, the game service saves the result, has the rating service rate it, then announces the finish, which fair play listens for. Everything the rating maths depends on is produced offline and pinned by version.
 
 ## Position pipeline
 
@@ -45,7 +45,7 @@ The game service is the sole authority on board state and clocks; clients only p
 - **Live state:** held in memory by the one server process, as lila (Lichess's server) holds it; there is no Redis. A game is saved to PostgreSQL as soon as its status changes, which includes every pairing transition and each side's first move, and otherwise within 30 seconds of a move. A clean shutdown saves every game first and gives the side to move 20 seconds and the other side 10. A crash loses at most the last 30 seconds of moves, and lost clock time is not given back. Off Book promises nothing stronger than Lichess does here.
 - **Storage:** one `Game` row per game, created when the game starts and updated while it is live. Its moves are an array of SAN and each side's clock history is an array of centiseconds on the same row, as lila keeps them on its game document, but without lila's compression, which is not worth it at Off Book's size. No PGN file is stored: PGN is built from the row when asked for, as lila's export does.
 - **Custom start:** every game begins from a FEN, not the standard position. PGN export, the analysis board and any third-party import must use the PGN `SetUp` and `FEN` tags, and this needs testing early because many tools handle it badly.
-- **Events:** emits `game.started` and `game.finished` (result, termination reason, move count, clock data, position id).
+- **Events:** emits `game.started`, `game.finished` (result, termination reason, move count, clock data, position id) and `game.aborted` within the process, after the change is saved. There is no outbox, as in lila. When a game finishes, the result is saved, then the game is rated, then `game.finished` is announced, so a crash in between can leave a finished game unrated, as it can on Lichess.
 
 ## Rating engine
 
@@ -65,8 +65,8 @@ The known weakness is that one curve covers every player, while strong players c
 
 - **Pure and versioned.** The update is a function of prior ratings, result, position features and calibration vN, with no I/O. It can be unit-tested and replayed.
 - **No re-rating on recalibration.** A new calibration applies to new games only. Each game stores the calibration version and offset it was rated with, and the game page shows them with the expected score.
-- **Event-sourced for voids only.** A rating is a fold over `game.finished` events, each replayed with its own pinned calibration. Voiding a game for collusion is a replay without it; it never re-prices other games.
-- **Aborts are invisible to ratings.** An aborted game emits `game.aborted`, which the rating service ignores.
+- **Event-sourced for voids only.** A rating is a fold over `RatingEvent` rows, one per player per rated game, each replayed with its own pinned calibration. Voiding a game for collusion is a replay without it; it never re-prices other games.
+- **Aborts are invisible to ratings.** An aborted game is never rated.
 - **Separate pools** per time control, and never mixed with a player's standard-chess rating elsewhere.
 - **Guard rails.** Clamp the offset at the eval ceiling. Players with high rating deviation are limited to the bands nearest level until their rating settles, since a big offset on an uncertain rating is mostly noise.
 
@@ -116,7 +116,7 @@ A redraw is a player's first abort in a pairing and loops back to a new position
 | White has moved | Black aborts | Redraw used; Black below abort limit | Aborted | Abort counted for Black |
 | White has moved | Black's first-move timer expires | — | Aborted | Abort counted for Black |
 | White has moved | Black moves | — | Playing | Both clocks start |
-| Playing | Mate, resignation, flag, stalemate, draw by agreement, repetition, 50-move rule, insufficient material, or abandonment | — | Finished | Emit `game.finished`; rate; reset both players' abort counters |
+| Playing | Mate, resignation, flag, stalemate, draw by agreement, repetition, 50-move rule, insufficient material, or abandonment | — | Finished | Save the result; rate; reset both players' abort counters; emit `game.finished` |
 | Aborted | — | — | Seeking | Emit `game.aborted`; both players return to the lobby |
 | Finished | — | — | Seeking | Both players return to the lobby |
 
@@ -171,7 +171,7 @@ TypeScript end to end for everything live, so client and server share one rules 
 | Live state | In memory, saved to PostgreSQL on every status change and otherwise within 30 seconds of a move, as lila does | A restart reloads games in progress, losing at most 30 seconds of moves after a crash; Redis only once there are several instances |
 | Accounts | Sign in with Lichess (OAuth 2 with PKCE); Off Book's own user ids and sessions, with each Lichess account linked through `Identity` and its token discarded after sign-in | Most players will already have a Lichess account, and no passwords are held. Because nothing but `Identity` refers to Lichess, another sign-in method can be added later without touching games or ratings |
 | Store | PostgreSQL | Relational integrity across versions and games |
-| Events | Transactional outbox table in PostgreSQL | No broker to run |
+| Events | In process, published after the change is saved; no outbox, as lila | No broker or outbox to run. A crash between saving a result and rating it can leave a game unrated, which Lichess accepts too |
 | Pipeline | Python with the Stockfish CLI | Batch analysis, off the critical path |
 | Published pools | Versioned files attached to GitHub releases, loaded into PostgreSQL | The record survives any database being reset or replaced, and costs nothing to host. Pools stay out of git |
 | Migrations | dbmate (MIT), plain SQL files run in order and recorded in the database; forward-only | Two languages share the database, so the schema belongs to neither: SQL reads the same from TypeScript and Python, and dbmate runs as a container inside the local stack |
@@ -214,7 +214,7 @@ Build the riskiest part first. Whether a pool exists at all is the one question 
 
 **Decided (5 November 2026):** the crawl threshold is 0.05%, the same as the rarity threshold, so the crawl takes no more of Lichess's data than the current rule needs. A higher rarity threshold can be applied later from the store; a lower one means a top-up crawl, which extends the same store and looks up only positions it lacks.
 
-**Decided (8 November 2026):** live play follows lila, Lichess's server, and promises nothing stronger than Lichess does. Live games are held in memory by the one server process, with no Redis (D-01). A game is saved to PostgreSQL as soon as its status changes and otherwise within 30 seconds of a move, as lila's `GameProxy` does. Off Book's pairing transitions, including each side's first move, are status changes, because the first-move timer charges aborts. A clean shutdown saves every game and gives the side to move 20 seconds and the other side 10, as lila does when it stops. A crash loses at most the last 30 seconds of moves, and lost clock time is not given back. Write-through on every move was dropped because it promised more than Lichess does. Each game is one `Game` row, created when the game starts and updated while it is live, with its moves as SAN and each side's clock history on the row, as lila keeps them on its game document, rather than in a table of moves (D-02). No PGN file is stored, so there is no Blob Storage: PGN is built from the row when asked for, as lila's export does.
+**Decided (8 November 2026):** live play follows lila, Lichess's server, and promises nothing stronger than Lichess does. Live games are held in memory by the one server process, with no Redis (D-01). A game is saved to PostgreSQL as soon as its status changes and otherwise within 30 seconds of a move, as lila's `GameProxy` does. Off Book's pairing transitions, including each side's first move, are status changes, because the first-move timer charges aborts. A clean shutdown saves every game and gives the side to move 20 seconds and the other side 10, as lila does when it stops. A crash loses at most the last 30 seconds of moves, and lost clock time is not given back. Write-through on every move was dropped because it promised more than Lichess does. Each game is one `Game` row, created when the game starts and updated while it is live, with its moves as SAN and each side's clock history on the row, as lila keeps them on its game document, rather than in a table of moves (D-02). No PGN file is stored, so there is no Blob Storage: PGN is built from the row when asked for, as lila's export does. There is no outbox (D-03). As in lila's finisher, when a game finishes the result is saved, the game is rated, and then `game.finished` is announced within the process, so a crash in between can leave a finished game unrated. A crash may be likelier for Off Book than for Lichess, but an unrated game costs it no more, so Lichess's precedent stands. A rating is a fold over `RatingEvent` rows, not over events.
 
 1. **How long before a seek widens?** Too short and nobody gets the band they asked for; too long and the second player online leaves before the first is matched.
 2. **How do you concentrate players in time?** With one time control and no engine opponents, the number of people online at the same moment decides everything. Scheduled sessions, arenas or notifications when someone is seeking are the usual levers.
