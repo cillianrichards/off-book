@@ -8,6 +8,12 @@ or later (decided 1 November 2026). It therefore sits where a line leaves common
 further down a line that has already left common play is not a candidate, and nor is anything on a line
 that leaves common play too early, such as 1.Na3.
 
+A candidate must also give the player a real first decision, so positions that start mid-sequence are
+dropped (decided 12 November 2026): those with no legal moves, those where the side to move is in check,
+and those mid-exchange, where the side to move is behind in material and has a capture that comes out
+ahead once the exchange on its square is played out, as after 4.Bxc6 in the Exchange Ruy Lopez. A side
+that is behind with nothing to take back at once, as in a gambit, is not mid-exchange.
+
 A position is identified as FIDE's repetition rule identifies it: the pieces, the side to move, castling
 rights, and an en passant square only when a capture is legal. Move order and move counters play no part.
 Positions are keyed by a 64-bit hash, so two positions sharing a key would be counted together; among the
@@ -110,6 +116,63 @@ def write_candidates(output: Path, candidates: Sequence[Candidate], report: dict
     report_path = output.with_name(output.name + ".report.json")
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n")
     return report_path
+
+
+PIECE_VALUES = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.QUEEN: 9, chess.KING: 0}
+
+
+def starts_mid_sequence(board: chess.Board) -> str | None:
+    """Why the position should not start a game, or None: "no_legal_moves", "in_check" or "mid_exchange".
+
+    Mid-exchange means the side to move is behind in material and has a capture that comes out ahead once
+    every recapture on that square has been played out, so its first move is to take back rather than to
+    decide. A gambit, where the material cannot be won straight back, is not mid-exchange.
+    """
+    if not any(board.legal_moves):
+        return "no_legal_moves"
+    if board.is_check():
+        return "in_check"
+    behind = (
+        sum(
+            PIECE_VALUES[piece.piece_type] * (1 if piece.color == board.turn else -1)
+            for piece in board.piece_map().values()
+        )
+        < 0
+    )
+    if behind and any(exchange_gain(board, move) > 0 for move in board.generate_legal_captures()):
+        return "mid_exchange"
+    return None
+
+
+def exchange_gain(board: chess.Board, move: chess.Move) -> int:
+    """Material the capture `move` wins once both sides have recaptured on its square as long as it pays.
+
+    Each side recaptures with its least valuable piece and may stop at any point: the usual static exchange
+    evaluation, played with legal moves so that pins count.
+    """
+    square = move.to_square
+    captured = chess.PAWN if board.is_en_passant(move) else board.piece_type_at(square)
+    gains = [PIECE_VALUES[captured] if captured else 0]
+    on_square = PIECE_VALUES[move.promotion or board.piece_type_at(move.from_square) or chess.PAWN]
+    position = board.copy(stack=False)
+    position.push(move)
+    while True:
+        recaptures = list(position.generate_legal_captures(to_mask=chess.BB_SQUARES[square]))
+        if not recaptures:
+            break
+        recapture = min(
+            recaptures, key=lambda m: PIECE_VALUES[m.promotion or position.piece_type_at(m.from_square) or 0]
+        )
+        gains.append(on_square - gains[-1])
+        on_square = PIECE_VALUES[recapture.promotion or position.piece_type_at(recapture.from_square) or 0]
+        position.push(recapture)
+    for depth in range(len(gains) - 1, 0, -1):
+        gains[depth - 1] = -max(-gains[depth - 1], gains[depth])
+    return gains[0]
+
+
+REMOVED_AT_THE_START = ("no_legal_moves", "in_check", "mid_exchange")
+"""Reasons `starts_mid_sequence` gives, in the order the reports list them."""
 
 
 class CollectRefused(Exception):
@@ -455,7 +518,7 @@ def collect(
         too_early = ~still_common & ~below_floor & ~np.isin(entered_keys, late_keys)
         survivors = entered_keys[~still_common & ~below_floor & ~too_early]
 
-        candidates, no_legal_moves = _recover(
+        candidates, mid_sequence = _recover(
             survivors, keys, plies, moves, game_starts, sorted_keys, counts, tally.accepted
         )
         report = {
@@ -472,7 +535,7 @@ def collect(
                 "still_common": int(np.count_nonzero(still_common)),
                 "below_min_games": int(np.count_nonzero(below_floor)),
                 "before_min_ply": int(np.count_nonzero(too_early)),
-                "no_legal_moves": no_legal_moves,
+                **mid_sequence,
             },
             "candidates": len(candidates),
         }
@@ -492,10 +555,11 @@ def _recover(
     sorted_keys: Int64Array,
     counts: Int64Array,
     games_counted: int,
-) -> tuple[list[Candidate], int]:
-    """Replay one earliest occurrence of each surviving key to give its FEN, dropping finished positions."""
+) -> tuple[list[Candidate], dict[str, int]]:
+    """Replay one earliest occurrence of each surviving key to give its FEN, dropping mid-sequence starts."""
+    removed = dict.fromkeys(REMOVED_AT_THE_START, 0)
     if len(survivors) == 0:
-        return [], 0
+        return [], removed
     earliest: dict[int, tuple[int, int]] = {}  # key -> (ply, index of an occurrence at that ply)
     chunk = 8_000_000
     for start in range(0, len(keys), chunk):
@@ -505,20 +569,21 @@ def _recover(
             key, ply = int(block[offset]), int(plies[start + offset])
             if key not in earliest or ply < earliest[key][0]:
                 earliest[key] = (ply, start + int(offset))
-    candidates, no_legal_moves = [], 0
+    candidates = []
     for key, (ply, index) in earliest.items():
         game_start = int(game_starts[np.searchsorted(game_starts, index, side="right") - 1])
         board = chess.Board()
         for code in moves[game_start + 1 : index + 1]:
             board.push(_decode(int(code)))
-        if not any(board.legal_moves):
-            no_legal_moves += 1
+        reason = starts_mid_sequence(board)
+        if reason is not None:
+            removed[reason] += 1
             continue
         games = int(_lookup(sorted_keys, counts, np.array([key], dtype=np.int64))[0])
         fen = f"{board.epd(en_passant='legal')} 0 {ply // 2 + 1}"
         candidates.append(Candidate(fen, ply, games, games / games_counted))
     candidates.sort(key=lambda candidate: candidate.fen)
-    return candidates, no_legal_moves
+    return candidates, removed
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -564,7 +629,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"{removed['still_common']:,} still common, "
         f"{removed['below_min_games']:,} below {settings.min_games} games, "
         f"{removed['before_min_ply']:,} before ply {settings.min_ply}, "
-        f"{removed['no_legal_moves']:,} finished; "
+        f"{removed['no_legal_moves']:,} finished, {removed['in_check']:,} in check, "
+        f"{removed['mid_exchange']:,} mid-exchange; "
         f"{len(collection.candidates):,} candidates written to {args.output}, report in {report_path}."
     )
     return 0

@@ -11,9 +11,9 @@ Lichess keeps a single move per position per game, the last one played from it, 
 position the game later returns to is not offered. That changes nothing in practice, and on the same games
 the crawl and P1-02 select the same candidates.
 
-`candidates_from_store` applies P1-02's rule to a store. Any rarity threshold at or above the lowest one the
-store was crawled at works, as do any floor and minimum ply; a threshold the store cannot support is
-refused rather than guessed at.
+`candidates_from_store` applies P1-02's rule to a store, including dropping positions that start in
+check or mid-exchange. Any rarity threshold at or above the lowest one the store was crawled at works,
+as do any floor and minimum ply; a threshold the store cannot support is refused rather than guessed at.
 
 Run with `python -m off_book_pipeline.masters STORE OUTPUT [--rare-below PERCENT]`.
 """
@@ -30,7 +30,13 @@ from typing import Any
 
 import chess
 
-from off_book_pipeline.collect import Candidate, CollectSettings, write_candidates
+from off_book_pipeline.collect import (
+    REMOVED_AT_THE_START,
+    Candidate,
+    CollectSettings,
+    starts_mid_sequence,
+    write_candidates,
+)
 
 START = chess.Board().epd(en_passant="legal")
 
@@ -216,7 +222,7 @@ def candidates_from_store(
                     states.append(state)
 
     entered = {following for epd in common for following in children_of(epd)}
-    removed = {"still_common": 0, "below_min_games": 0, "before_min_ply": 0, "no_legal_moves": 0}
+    removed = dict.fromkeys(("still_common", "below_min_games", "before_min_ply", *REMOVED_AT_THE_START), 0)
     candidates = []
     for epd in sorted(entered):
         games = counts[epd].games
@@ -226,8 +232,8 @@ def candidates_from_store(
             removed["below_min_games"] += 1
         elif epd not in late:
             removed["before_min_ply"] += 1
-        elif not any(board_at(epd).legal_moves):
-            removed["no_legal_moves"] += 1
+        elif (reason := starts_mid_sequence(board_at(epd))) is not None:
+            removed[reason] += 1
         else:
             ply = earliest[epd]
             candidates.append(Candidate(f"{epd} 0 {ply // 2 + 1}", ply, games, games / total))
@@ -283,7 +289,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"{report['entered_from_common']:,} positions entered from common ones: "
         f"{removed['still_common']:,} still common, {removed['below_min_games']:,} below "
         f"{settings.min_games} games, {removed['before_min_ply']:,} before ply {settings.min_ply}, "
-        f"{removed['no_legal_moves']:,} finished; {len(candidates):,} candidates written to {args.output}, "
+        f"{removed['no_legal_moves']:,} finished, {removed['in_check']:,} in check, "
+        f"{removed['mid_exchange']:,} mid-exchange; {len(candidates):,} candidates written to {args.output}, "
         f"report in {report_path}."
     )
     return 0

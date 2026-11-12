@@ -20,7 +20,9 @@ from off_book_pipeline.collect import (
     CollectRefused,
     CollectSettings,
     collect,
+    exchange_gain,
     main,
+    starts_mid_sequence,
 )
 
 # The hand-made games carry no ratings, so the masters filter is off for them.
@@ -94,6 +96,8 @@ def test_the_report_accounts_for_every_game_and_position(collection: Collection)
         "below_min_games": 4,
         "before_min_ply": 3,
         "no_legal_moves": 1,
+        "in_check": 0,
+        "mid_exchange": 0,
     }
     assert report["candidates"] == 4
 
@@ -268,3 +272,76 @@ def test_main_reports_a_collection_with_no_masters_games(
     # The hand-made games have no ratings, so with the default filter none of them count.
     assert main([str(tmp_path / "out.tsv"), str(pgn_path)]) == 1
     assert "No usable games" in capsys.readouterr().err
+
+
+# Positions that start mid-sequence (decided 12 November 2026)
+
+# Eight games share 1.e4 d5 2.Nc3 Nf6, then split two ways each at ply 5. At 30% a position is common from
+# 3 of the 8 games, so each branch is a rare candidate entered from a common position.
+MID_SEQUENCE_GAMES = [
+    "e4 d5 Nc3 Nf6 exd5 Nxd5",  # Black is a pawn down and takes back: mid-exchange
+    "e4 d5 Nc3 Nf6 exd5 Qxd5",
+    "e4 d5 Nc3 Nf6 Bb5+ c6",  # Black is in check
+    "e4 d5 Nc3 Nf6 Bb5+ Bd7",
+    "e4 d5 Nc3 Nf6 Nf3 dxe4",  # a real choice: kept
+    "e4 d5 Nc3 Nf6 Nf3 d4",
+    "e4 d5 Nc3 Nf6 Bc4 dxc4",  # Black can capture, but is not behind: kept
+    "e4 d5 Nc3 Nf6 Bc4 dxe4",
+]
+MID_SEQUENCE_RULE = CollectSettings(rare_below_percent="30", min_rating=None)
+
+
+def test_positions_starting_in_check_or_mid_exchange_are_dropped(tmp_path: Path) -> None:
+    path = tmp_path / "games.pgn"
+    path.write_text("".join(pgn_game(f"W{i}", f"B{i}", m) for i, m in enumerate(MID_SEQUENCE_GAMES)))
+    collection = collect([path], MID_SEQUENCE_RULE)
+    assert {c.fen for c in collection.candidates} == {
+        fen_after("e4 d5 Nc3 Nf6 Nf3"),
+        fen_after("e4 d5 Nc3 Nf6 Bc4"),
+    }
+    removed = collection.report["removed"]
+    assert (removed["in_check"], removed["mid_exchange"], removed["no_legal_moves"]) == (1, 1, 0)
+
+
+@pytest.mark.parametrize(
+    ("moves", "reason"),
+    [
+        ("e4 e5 Nf3 Nc6 Bb5 a6 Bxc6", "mid_exchange"),  # Exchange Ruy Lopez: a piece to take back
+        ("e4 d5 exd5", "mid_exchange"),  # a pawn to take back
+        ("e4 c5 d4 cxd4 c3 dxc3", "mid_exchange"),  # Smith-Morra: Nxc3 takes back
+        ("e4 e5 d4 exd4", "mid_exchange"),  # Centre Game: Qxd4 takes back
+        ("e4 d5 Nc3 Nf6 exd5", "mid_exchange"),  # Nxd5 Nxd5 Qxd5 still wins the pawn back
+        ("d4 e5 dxe5 Bb4+", "in_check"),
+        ("f3 e5 g4 Qh4#", "no_legal_moves"),
+        ("d4 d5 c4 dxc4", None),  # Queen's Gambit Accepted: a pawn down, nothing to take back at once
+        ("e4 e5 Nf3 Nc6 Bc4 Bc5 b4 Bxb4", None),  # Evans Gambit: Bxf7+ Kxf7 loses a piece for a pawn
+        ("e4 e5 f4", None),  # King's Gambit: Black can take, but is not behind
+        ("e4 d5", None),  # a capture is available, but White is not behind
+        ("e4 e5 Nf3 Nc6 Bb5 a6", None),
+    ],
+)
+def test_what_counts_as_starting_mid_sequence(moves: str, reason: str | None) -> None:
+    board = chess.Board()
+    for move in moves.split():
+        board.push_san(move)
+    assert starts_mid_sequence(board) == reason
+
+
+def test_en_passant_counts_as_winning_a_pawn_back() -> None:
+    # White is a pawn down, and its only capture is exd6 en passant.
+    board = chess.Board("4k3/p7/8/3pP3/8/8/8/4K3 w - d6 0 1")
+    assert starts_mid_sequence(board) == "mid_exchange"
+
+
+@pytest.mark.parametrize(
+    ("fen", "move", "gain"),
+    [
+        ("4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1", "e4d5", 1),  # an undefended pawn
+        ("4k3/2p5/3p4/8/8/8/3Q4/4K3 w - - 0 1", "d2d6", -8),  # a pawn defended by a pawn, taken by the queen
+        ("3rk3/8/3p4/8/8/3R4/3R4/4K3 w - - 0 1", "d3d6", 1),  # two rooks against one: the pawn falls
+        ("4k3/8/3p4/2p5/8/8/8/3QK3 w - - 0 1", "d1d6", 1),  # c5 does not guard d6, so the pawn is free
+    ],
+)
+def test_exchange_gain(fen: str, move: str, gain: int) -> None:
+    board = chess.Board(fen)
+    assert exchange_gain(board, chess.Move.from_uci(move)) == gain

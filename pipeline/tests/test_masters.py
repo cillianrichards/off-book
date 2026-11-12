@@ -140,6 +140,8 @@ def test_the_crawl_gives_the_hand_counted_candidates(crawled: Path) -> None:
         "below_min_games": 3,
         "before_min_ply": 3,
         "no_legal_moves": 1,
+        "in_check": 0,
+        "mid_exchange": 0,
     }
 
 
@@ -451,3 +453,16 @@ def test_the_client_gives_up_when_lichess_cannot_be_reached() -> None:
     with pytest.raises(CrawlRefused, match="Cannot reach Lichess"):
         explorer.lookup(START)
     assert waits == [20.0, 40.0, 80.0, 160.0]
+
+
+def test_the_crawl_drops_mid_sequence_starts_as_p1_02_does(tmp_path: Path) -> None:
+    from test_collect import MID_SEQUENCE_GAMES, MID_SEQUENCE_RULE
+
+    store = tmp_path / "crawl.jsonl"
+    crawl(store, FakeExplorer([(moves, "1-0") for moves in MID_SEQUENCE_GAMES]), "30", code="test")
+    candidates, report = candidates_from_store(store, MID_SEQUENCE_RULE)
+    pgn = tmp_path / "games.pgn"
+    pgn.write_text("".join(pgn_game(f"W{i}", f"B{i}", m) for i, m in enumerate(MID_SEQUENCE_GAMES)))
+    assert candidates == collect([pgn], MID_SEQUENCE_RULE).candidates
+    assert len(candidates) == 2
+    assert (report["removed"]["in_check"], report["removed"]["mid_exchange"]) == (1, 1)
