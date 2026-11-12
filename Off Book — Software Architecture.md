@@ -225,6 +225,8 @@ Build the riskiest part first. Whether a pool exists at all is the one question 
 
 **Decided (12 November 2026):** positions that start in check or mid-exchange are not candidates, since the first move is a forced reply or an obvious recapture rather than a decision. Mid-exchange is judged by playing out the exchange on the square, so a gambit pawn that cannot be won straight back does not count. On the masters candidates this drops 269 positions in check and 1,154 mid-exchange, leaving 18,306 of 19,729.
 
+**Decided (12 November 2026):** the pipeline's data lives in a private repository, `cillianrichards/off-book-data`, as well as on the developer's machine: the crawl's store, the candidates file and its report, and the analysis results. It is a backup off the laptop and lets work continue anywhere. It is separate from this repository, which stays free of data, and private, so the store remains unpublished; this replaces keeping the store only on the developer's machine.
+
 1. **How long before a seek widens?** Too short and nobody gets the band they asked for; too long and the second player online leaves before the first is matched.
 2. **How do you concentrate players in time?** With one time control and no engine opponents, the number of people online at the same moment decides everything. Scheduled sessions, arenas or notifications when someone is seeking are the usual levers.
 3. **Should a player's chosen band persist across pairings?** Re-posting the seek automatically after a return to the lobby saves a step, but may keep someone in a band they have just shown they dislike.
