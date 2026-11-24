@@ -10,7 +10,7 @@ Where the product is still undecided, this design assumes the following. Each is
 
 - Web-first progressive web app; native apps later as thin wrappers.
 - Real-time rated games at 10+0 only at launch. Time control is a field on seeks, games and ratings, so more can be added without a schema change.
-- Players choose an eval band and whether they take the better or worse side (opponent rating ranges come after launch), see the position and its eval before play, and may abort before the first move.
+- Players choose Balanced, Winning or Losing: Balanced is a near-level position with no choice of side, and Winning or Losing is the better or worse side of a position at least a pawn off level (opponent rating ranges come after launch), see the position and its eval before play, and may abort before the first move.
 - Open source, so GPL components are usable and the server is published.
 - Until launch, deployed builds are used by the developer alone, so obligations owed to users, such as licence notices and source offers (X-07), fall due at launch.
 - One developer. At launch everything live runs as a single Node.js process with PostgreSQL as the only store; the services below are module boundaries inside it, split out only when load demands it.
@@ -69,7 +69,7 @@ The known weakness is that one curve covers every player, while strong players c
 - **Event-sourced for voids only.** A rating is a fold over `RatingEvent` rows, one per player per rated game, each replayed with its own pinned calibration. Voiding a game for collusion is a replay without it; it never re-prices other games.
 - **Aborts are invisible to ratings.** An aborted game is never rated.
 - **Separate pools** per time control, and never mixed with a player's standard-chess rating elsewhere.
-- **Guard rails.** Clamp the offset at the eval ceiling. Players with high rating deviation are limited to the bands nearest level until their rating settles, since a big offset on an uncertain rating is mostly noise.
+- **Guard rails.** Clamp the offset at the eval ceiling. Players with high rating deviation are limited to the Balanced band until their rating settles, since a big offset on an uncertain rating is mostly noise.
 
 **Calibration loop**
 
@@ -81,18 +81,17 @@ The known weakness is that one curve covers every player, while strong players c
 
 Players post seeks to a lobby (time control, eval band, opponent rating range) and others accept them; matchmaking then draws the position from that band. The game service never chooses the position or colours.
 
-- **Eval bands** are defined on the size of the eval, and the player picks a side:
+- **Eval bands** are defined on the size of the eval, and a player picks one of three options:
 
-| Band | Absolute eval (pawns) | Sides |
+| Option | Absolute eval (pawns) | Side |
 | --- | --- | --- |
-| Level | \[0, 0.5) | Shared; no choice of side |
-| Slight | \[0.5, 1) | Better or worse |
-| Clear | \[1, 2) | Better or worse |
-| Large | \[2, 3\] | Better or worse |
+| Balanced | \[0, 1) | Shared; no choice of side. Each player will have the better position about half the time |
+| Winning | \[1, 3\] | The better side |
+| Losing | \[1, 3\] | The worse side |
 
-- **Mirroring:** a seek for the worse side of a band matches a seek for the better side of the same band. Because bands use absolute eval, a position always falls in the same band for both players.
+- **Mirroring:** a Winning seek matches a Losing seek, and Balanced matches Balanced. Because bands use absolute eval, a position always falls in the same band for both players. Winning and Losing draw from the same positions: a player's colour follows from which side is better, never from a choice of colour.
 - **Opponent range:** disabled at launch to protect liquidity. When enabled, a seek is visible only to players inside its range.
-- **Lobby before queue:** a seek lobby shows what is actually available. A player's band and side are a preference, not a filter: the priority is a game against a human. Pair exact matches first; once a seek has waited, pair it with any other waiting seek, using the requested band when the two are compatible and the Level band when they are not. Reveal, redraw and abort let either player decline the result.
+- **Lobby before queue:** a seek lobby shows what is actually available. A player's band and side are a preference, not a filter: the priority is a game against a human. Pair exact matches first; once a seek has waited, pair it with any other waiting seek, using the requested band when the two are compatible and the Balanced band when they are not. Reveal, redraw and abort let either player decline the result.
 - **Reveal and abort:** once paired, both players see the position and its eval. Either may abort before making their first move; the game is then unrated and recorded as aborted. Each player has one redraw per pairing: their first abort keeps the same opponent and draws a new position from the same band. Any abort after both redraws are used, or a player's second abort, returns both players to the lobby. After three consecutive aborts a player must play their next game; redraws do not count towards this limit.
 - **Draw:** sample from the band, excluding positions either player has had recently, so the pool cannot be memorised quickly.
 - **Mini-matches:** an optional `match_id` groups two games from the same position with colours reversed. The schema supports it even if the product does not yet.
@@ -226,6 +225,8 @@ Build the riskiest part first. Whether a pool exists at all is the one question 
 **Decided (12 November 2026):** positions that start in check or mid-exchange are not candidates, since the first move is a forced reply or an obvious recapture rather than a decision. Mid-exchange is judged by playing out the exchange on the square, so a gambit pawn that cannot be won straight back does not count. On the masters candidates this drops 269 positions in check and 1,154 mid-exchange, leaving 18,306 of 19,729.
 
 **Decided (12 November 2026):** the pipeline's data lives in a private repository, `cillianrichards/off-book-data`, as well as on the developer's machine: the crawl's store, the candidates file and its report, and the analysis results. It is a backup off the laptop and lets work continue anywhere. It is separate from this repository, which stays free of data, and private, so the store remains unpublished; this replaces keeping the store only on the developer's machine.
+
+**Decided (24 November 2026):** the eval bands are now two: Balanced (absolute eval under 1 pawn) and a band from 1 to the ceiling of 3, split into Winning and Losing by side. Balanced has no choice of side, since positions under a pawn are mostly near level and players accept having the better position about half the time. In the upper band a Winning player always plays a Losing player, and a player never chooses a colour: White is better in most positions, so colour follows from the side. The aim of the pool is enough variety that preparing lines is impractical; a player who transposes into a prepared line by luck is accepted. The audience is amateurs, intermediates and lower-level experts, not professionals. A working target is that a player on ten games a day goes a month without meeting the same position; the exclusion window (D-05) enforces that, so pool depth (D-06) is set by the risk of a player studying the pool, not by repeats. Colour balance is the principle that players have equal average numbers of positions as White and Black; how it is reached is open (D-13).
 
 1. **How long before a seek widens?** Too short and nobody gets the band they asked for; too long and the second player online leaves before the first is matched.
 2. **How do you concentrate players in time?** With one time control and no engine opponents, the number of people online at the same moment decides everything. Scheduled sessions, arenas or notifications when someone is seeking are the usual levers.

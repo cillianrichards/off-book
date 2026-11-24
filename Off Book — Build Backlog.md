@@ -34,7 +34,7 @@ Exit test: after the eval ceiling and stability filters, every band you intend t
 - [x] **P1-03 Analysis runner.** Fixed node count, MultiPV 3, plus the shallower search; stores eval, shallow eval, best-move gap and mate flags. One thread and a fresh hash per search, parallel across positions, resumable after interruption. Done when re-running a sample gives identical evals.
 - **P1-04 and P1-05** became P3-01 and P3-02, both since retired; **P1-08** moved to Phase 3 as P3-04.
 - [ ] **P1-06 Filters.** Eval ceiling (absolute eval above 3, and every mate score) and stability; best-move gap recorded. Every threshold is configuration stored in the filter settings, and the run reports how many positions each filter removed.
-- [ ] **P1-07 Band coverage report.** Positions per band, split by which colour is better. Flags any band where the worse side is almost always the same colour.
+- [ ] **P1-07 Band coverage report.** Positions in Balanced, and in the 1-to-3 band split by which colour is better (Winning and Losing share these positions). Flags a colour split so uneven that equal average colours (D-13) cannot be reached.
 - [ ] **P1-09 Exit test.** Pass or fail per band against D-06. A failing band is dropped from launch, or a threshold changes, before any interface work.
 
 ## Phase 2 — Playable chess
@@ -102,7 +102,7 @@ Exit test: pool v1 is published, with every band intended for launch clearing D-
 - [ ] **P3-08 Transition tests.** One test per row of the table, plus property tests: every pairing ends Finished or Aborted, never more than three positions, and redraws never add to the abort count.
 - [ ] **P3-09 First-move timers.** White's, then Black's, restarted on every redraw; deadlines persisted so a restart resumes them. Expiry counts an abort against the player who did not move.
 - [ ] **P3-10 Abort limit.** At three consecutive aborts the abort control is disabled, but an unused redraw still works. Any finished game resets both players' counters.
-- [ ] **P3-11 Position draw.** Sample from the band in the current pool version, excluding positions either player has had within the exclusion window. *Needs D-13 for Level colours.*
+- [ ] **P3-11 Position draw.** Sample from the band in the current pool version, excluding positions either player has had within the exclusion window. *Needs D-13 for Balanced colours.*
 - [ ] **P3-12 Band challenges.** Challenge links (P2-13) carry band and side and open a pairing, so pool games are playable before the lobby exists (D-04).
 - [ ] **P3-13 Pool fields on games.** `Game` records the position, pool version, each player's band and the pairing id.
 
@@ -132,7 +132,7 @@ Exit test: on Lichess 10+0 games, actual score tracks predicted score in every e
 - [ ] **P4-11 Rating projection.** `Rating` rebuilt from events, with a command that rebuilds and compares against the live table.
 - [ ] **P4-12 Rating on finish.** When a game finishes, the result is saved, the game is rated with the calibration version pinned on it, and then `game.finished` is announced, following lila's finisher. Aborted games are never rated. A crash between saving and rating leaves the game unrated, as on Lichess (D-03).
 - [ ] **P4-13 Separate pools.** Ratings keyed by player and time control; nothing imported from other sites.
-- [ ] **P4-14 High-deviation restriction.** Players above a deviation threshold can only take the bands nearest Level, enforced in pairing.
+- [ ] **P4-14 High-deviation restriction.** Players above a deviation threshold can only take the Balanced band, enforced in pairing.
 - [ ] **P4-15 Rating explanation.** On the reveal screen and game page: side, eval, points and expected score. It must show the number Glicko-2 actually used (D-11).
 - [ ] **P4-16 History and breakdown.** Rating chart over time; per game, rating and deviation before and after, offset and calibration version.
 - [ ] **P4-17 Void and replay.** Voids a game and re-folds the affected events, each with its own pinned calibration. *Needs D-12.*
@@ -145,8 +145,8 @@ Exit test: players find games through the lobby alone, and a collusion case can 
 
 - [ ] **P5-01 Seeks.** Post, cancel and expire seeks carrying time control, band, side and an inert opponent range.
 - [ ] **P5-02 Live lobby.** What is actually available, by band and side, pushed over WebSocket.
-- [ ] **P5-03 Matching.** Worse side pairs with better side in the same band, Level with Level; exact matches first.
-- [ ] **P5-04 Widening.** After the wait, pair with any waiting seek: the requested band if compatible, otherwise Level. Respects P4-14.
+- [ ] **P5-03 Matching.** Losing pairs with Winning, Balanced with Balanced; exact matches first.
+- [ ] **P5-04 Widening.** After the wait, pair with any waiting seek: the requested band if compatible, otherwise Balanced. Respects P4-14.
 - [ ] **P5-05 Opponent range, switched off.** Built and tested behind a flag.
 - [ ] **P5-06 Pair throttling.** Rate-limit repeat pairings between the same two accounts.
 - [ ] **P5-07 Back to the lobby.** After an abort or a finish. Whether the seek re-posts itself depends on D-15.
@@ -206,7 +206,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 **Numbers to set**
 
 - [ ] **D-05 Live parameters.** First-move timer, disconnection grace, seek wait before widening (the doc's open question 1), recent-position exclusion window, pair-throttle limit, lag-compensation cap, high-deviation threshold. Decided 8 November 2026: the lag-compensation cap and disconnection grace are lila's (P2-07, P2-10); the rest are open.
-- [ ] **D-06 Pool depth.** Minimum positions per band and colour for the Phase 1 and Phase 3 exit tests.
+- [ ] **D-06 Pool depth.** Minimum positions for the Phase 1 and Phase 3 exit tests, counted for Balanced and for the 1-to-3 band by which colour is better. The exclusion window (D-05) already prevents repeats within a month at ten games a day (24 November 2026), so the number answers a different question: how large a pool a player studying it could not learn.
 - [ ] **D-07 Calibration tolerance.** Largest acceptable gap between actual and predicted score, and minimum games per cell.
 
 **Design questions**
@@ -216,7 +216,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 - [ ] **D-10 Update timing.** Rate after every game, as Lichess does, or batch into Glicko-2 rating periods.
 - [ ] **D-11 Where the offset sits.** Glicko-2 scales the rating difference by the opponent's deviation. If the offset sits inside that scaling, an uncertain opponent shrinks it, and the expected score shown before play is not the one used.
 - [ ] **D-12 Void replay scope.** Removing a voided game changes the player's rating before their later games. Do those later opponents keep their ratings, and which pre-game ratings does the re-fold use for them?
-- [ ] **D-13 Level band colours.** Level has no choice of side, but someone plays White and someone gets the +0.4. How are colours assigned?
+- [ ] **D-13 Colour balance.** Players should have equal average numbers of positions as White and Black (24 November 2026). Balanced has no choice of side, so someone plays White and someone gets the better side: how are colours assigned there? In the 1-to-3 band colour follows the side, and White is better in about 81% of a sample, so a player who always takes Winning would mostly play White. Options: weight each draw by the player's colour history, which can starve the thinner cell; swap colours in pool positions, which is new scope and departs from real games; or balance only across a player's whole history.
 - [ ] **D-14 Concentrating players.** The doc's open question 2. With one time control and no engine opponents, this may be a launch requirement rather than Phase 6.
 - [ ] **D-15 Band persistence.** The doc's open question 3: does a chosen band re-post after a return to the lobby?
 - [x] **D-16 Masters games source.** Decided 1 November 2026: Lichess's masters database (over-the-board games, FIDE 2200+, from 1952), read once through the opening explorer API (P1-10). TWIC was considered and dropped: it is free for personal use only.
