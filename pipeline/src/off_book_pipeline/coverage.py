@@ -9,6 +9,10 @@ Positions fall into two bands by the size of their deep eval (decided 24 Novembe
 The report counts each band's positions and how many favour White, favour Black or are exactly level. The
 colour split is reported, not tested: no colour balancing depends on it (D-13).
 
+The exit test (P1-09) passes a band when it holds at least 600 positions (D-06): two players on ten games
+a day, each excluding the other's recent positions, need about that many neither has seen in a month. The
+command exits with status 1 when any band fails.
+
 Run with `python -m off_book_pipeline.coverage FILTERED`, on the output of `off_book_pipeline.filters`.
 """
 
@@ -24,6 +28,9 @@ from off_book_pipeline.filters import read_filtered
 
 BALANCED_BELOW_CP = 100
 """The edge between the bands: a position at exactly 1 pawn is in Winning and Losing."""
+
+MINIMUM_POSITIONS = 600
+"""D-06: the fewest positions a band may hold after filtering and still pass the exit test."""
 
 
 class Band(StrEnum):
@@ -62,6 +69,11 @@ def coverage_report(coverage: dict[Band, BandCoverage]) -> dict[str, dict[str, i
     return {band.value: asdict(row) for band, row in coverage.items()}
 
 
+def exit_test(coverage: dict[Band, BandCoverage], minimum: int = MINIMUM_POSITIONS) -> dict[Band, bool]:
+    """P1-09: whether each band holds at least `minimum` positions."""
+    return {band: row.positions >= minimum for band, row in coverage.items()}
+
+
 def format_coverage(coverage: dict[Band, BandCoverage]) -> str:
     lines = []
     for band, row in coverage.items():
@@ -79,15 +91,27 @@ def main(argv: Iterable[str] | None = None) -> int:
         description="Count filtered positions per band, split by which colour is better.",
     )
     parser.add_argument("filtered", type=Path, help="output of off_book_pipeline.filters")
+    parser.add_argument(
+        "--minimum", type=int, default=MINIMUM_POSITIONS, help="positions a band needs to pass (D-06)"
+    )
     args = parser.parse_args(None if argv is None else list(argv))
+    if args.minimum < 1:
+        parser.error("--minimum must be at least 1")
     header, analyses = read_filtered(args.filtered)
     coverage = band_coverage(analyses)
+    passed = exit_test(coverage, args.minimum)
     report_path = args.filtered.with_name(args.filtered.name + ".coverage.json")
-    report = {"filters": header["filters"], "bands": coverage_report(coverage)}
+    report = {
+        "filters": header["filters"],
+        "bands": coverage_report(coverage),
+        "exit_test": {"minimum": args.minimum, "passed": {band.value: ok for band, ok in passed.items()}},
+    }
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n")
     print(format_coverage(coverage))
+    for band, ok in passed.items():
+        print(f"Exit test, {band.value}: {'pass' if ok else 'FAIL'} (at least {args.minimum} needed).")
     print(f"Report in {report_path}.")
-    return 0
+    return 0 if all(passed.values()) else 1
 
 
 if __name__ == "__main__":
