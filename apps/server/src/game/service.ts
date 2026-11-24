@@ -15,7 +15,7 @@ import {
   parseClientMessage,
   type ServerMessage,
 } from './protocol.ts';
-import type { GameStore } from './store.ts';
+import type { GameRecord, GameStore } from './store.ts';
 
 /** One open WebSocket, as the game service sees it. */
 export interface PlayerSocket {
@@ -141,6 +141,12 @@ export class GameService {
     if (live !== undefined) return live.game.view(this.#time.now());
     const record = await this.#store.load(id);
     return record === undefined ? undefined : LiveGame.restore(record).view(this.#time.now());
+  }
+
+  /** The game as last played, live or saved, for exports such as PGN (P2-18). */
+  async record(id: string): Promise<GameRecord | undefined> {
+    const live = this.#games.get(id);
+    return live !== undefined ? live.game.toRecord() : this.#store.load(id);
   }
 
   async join(id: string, userId: string): Promise<Join> {

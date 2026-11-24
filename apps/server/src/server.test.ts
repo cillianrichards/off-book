@@ -63,6 +63,21 @@ describe('HTTP', () => {
     assert.deepEqual(view.moves, []);
   });
 
+  test('exports a game as PGN from its starting FEN', async () => {
+    const response = await fetch(`http://${base}/api/games/${gameId}/pgn`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'application/x-chess-pgn; charset=utf-8');
+    assert.equal(
+      response.headers.get('content-disposition'),
+      `attachment; filename="off-book_${gameId}.pgn"`,
+    );
+    const pgn = await response.text();
+    assert.ok(pgn.includes('[White "alice"]'));
+    assert.ok(pgn.includes('[SetUp "1"]'));
+    assert.ok(pgn.includes(`[FEN "${STANDARD_FEN}"]`));
+    assert.equal((await fetch(`http://${base}/api/games/ZZZZZZZZ/pgn`)).status, 404);
+  });
+
   test('answers 404 for an unknown game or path, and 405 for other methods', async () => {
     assert.equal((await fetch(`http://${base}/api/games/ZZZZZZZZ`)).status, 404);
     assert.equal((await fetch(`http://${base}/api/games/not-an-id`)).status, 404);

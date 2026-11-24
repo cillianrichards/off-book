@@ -11,6 +11,8 @@ export type {
   GameView,
   Result,
 } from './live-game.ts';
+export { gamePgn } from './pgn.ts';
+export type { PgnOptions } from './pgn.ts';
 export { PostgresGameStore } from './postgres-store.ts';
 export type { ClientMessage, OpponentStatus, Rejection, ServerMessage } from './protocol.ts';
 export { GameService } from './service.ts';

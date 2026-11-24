@@ -78,7 +78,7 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 
 **PGN and analysis**
 
-- [ ] **P2-18 PGN export.** `SetUp` and `FEN` tags on every game. Done when exports open at the right position in Lichess's analysis board and two desktop tools.
+- [ ] **P2-18 PGN export.** `SetUp` and `FEN` tags on every game. Done when exports open at the right position in Lichess's analysis board and two desktop tools. Built 24 November 2026 at `GET /api/games/:id/pgn`, with lila's tags (`Variant "From Position"` for a non-standard start, `Termination` as lila maps it) and a `%clk` comment on every move; players are named by user id until P2-02 gives them handles, and `Site` is `?` until the client has game pages. python-chess reads a Black-to-move export to the same final position as the rules package; the Lichess and desktop checks are still to do by hand.
 - [ ] **P2-19 Analysis board.** Stockfish WebAssembly in the browser, starting from the game's FEN.
 
 **Development data**

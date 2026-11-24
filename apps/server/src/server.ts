@@ -3,6 +3,7 @@
 //
 // HTTP:      GET /health              liveness, for the host's probes
 //            GET /api/games/:id       a game as anyone may see it
+//            GET /api/games/:id/pgn   the game as PGN, from its starting FEN (P2-18)
 // WebSocket: /play/:id                a player's connection to their game, as lila's round socket is
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -11,7 +12,7 @@ import type { Duplex } from 'node:stream';
 
 import { type RawData, type WebSocket, WebSocketServer } from 'ws';
 
-import { GAME_ID, type GameService, type PlayerSocket } from './game/index.ts';
+import { GAME_ID, type GameService, gamePgn, type PlayerSocket } from './game/index.ts';
 import { errorFields, type Log } from './log.ts';
 
 /**
@@ -141,6 +142,21 @@ async function handleHttp(
   if (game !== undefined && GAME_ID.test(game)) {
     const view = await games.view(game);
     return view === undefined ? json(response, 404, { error: 'No such game' }) : json(response, 200, view);
+  }
+  const pgnOf = /^\/api\/games\/([^/]+)\/pgn$/.exec(path)?.[1];
+  if (pgnOf !== undefined && GAME_ID.test(pgnOf)) {
+    const record = await games.record(pgnOf);
+    if (record === undefined) return json(response, 404, { error: 'No such game' });
+    // Players are named by their Off Book user ids until accounts have handles (P2-02).
+    const text = gamePgn(record, { names: record.players });
+    response.writeHead(200, {
+      'Content-Type': 'application/x-chess-pgn; charset=utf-8',
+      'Content-Disposition': `attachment; filename="off-book_${record.id}.pgn"`,
+      'Content-Length': Buffer.byteLength(text),
+      'Cache-Control': 'no-store',
+    });
+    response.end(request.method === 'HEAD' ? undefined : text);
+    return;
   }
   return json(response, 404, { error: 'Not found' });
 }
