@@ -105,6 +105,8 @@ Analyse the candidates (P1-03) with `uv run python -m off_book_pipeline.analyse 
 
 Filter the finished analysis (P1-06) with `uv run python -m off_book_pipeline.filters CANDIDATES ANALYSIS OUTPUT`. It drops positions beyond the eval ceiling (an absolute eval above 300 centipawns, or any mate) and unstable ones (an eval that moves more than 100 centipawns between the shallow and deep searches); `--eval-ceiling-cp` and `--max-swing-cp` change the thresholds. It refuses an analysis that has not finished or was run on another candidates file. OUTPUT holds the positions kept, with the analysis run and filter settings in its first line, and `OUTPUT.report.json` says how many each filter removed.
 
+Count the filtered positions per band (P1-07) with `uv run python -m off_book_pipeline.coverage FILTERED`: Balanced (under a pawn) and Winning and Losing (a pawn up to the ceiling), each split by which colour is better. It prints the counts and writes them to `FILTERED.coverage.json`.
+
 Local database: Docker with Compose. PostgreSQL 18 runs in a container, bound to localhost, and dbmate applies the migrations in `db/migrations`.
 
 ```sh
