@@ -119,6 +119,8 @@ docker compose down      # stop it, keeping its data
 
 The live server saves games in this database. Start it with `pnpm --filter @off-book/server start` once `DATABASE_URL` is set (the same as in `.env`; Node does not read `.env` itself); it reloads any game left in play, and Ctrl+C stops it cleanly, saving every game first. Nobody can sign in to play until P2-02.
 
+The client is a progressive web app built with Vite (P2-14). `pnpm --filter @off-book/client dev` serves it at http://localhost:5173 and passes `/api` and the game WebSocket through to the server on port 8080 (set `OFF_BOOK_SERVER` to point elsewhere); `pnpm --filter @off-book/client build` writes the bundle to `apps/client/dist`, and `preview` serves that. Its tests build the bundle and render the pages, so `pnpm test` covers it with nothing more to install.
+
 The server's PostgreSQL tests (the game store, and restarting the server process mid-game, P2-08 and P2-12) run against this database, touching only rows they create; `pnpm test` skips them unless the variable is set:
 
 ```sh

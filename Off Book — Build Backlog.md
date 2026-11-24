@@ -71,7 +71,7 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 
 **Client**
 
-- [ ] **P2-14 PWA shell.** React and TypeScript, installable, usable at phone width.
+- [x] **P2-14 PWA shell.** React and TypeScript, installable, usable at phone width. Built 24 November 2026 with Vite (the conventional bundler; lila uses esbuild directly), game pages at `/:id` as lila's are, and a manifest with 192, 512 and maskable icons. There is no service worker: as in lila, which uses one only for push notifications, nothing is cached for offline use, and Chrome no longer needs one to install an app. Headless Chrome reports no installability errors, and the pages fit a 390-pixel screen.
 - [ ] **P2-15 Board.** chessground from any FEN, promotion picker, move list, sounds; decide on premoves.
 - [ ] **P2-16 Clock display.** Counts down locally and corrects to every server message.
 - [ ] **P2-17 Result screen.** Result, termination reason, PGN download, link to analysis.

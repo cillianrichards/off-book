@@ -29,6 +29,7 @@ Transitive packages are held to the allowlist but not listed here, because this 
 | [NumPy](https://numpy.org), `numpy` (PyPI) | `pipeline/` (counting positions, P1-02) | 2.5.4 | BSD-3-Clause, with bundled parts under 0BSD, MIT, Zlib and CC0-1.0, all on the allowlist | Yes | None while the pipeline runs offline and is not distributed as a program. |
 | [node-postgres](https://github.com/brianc/node-postgres), `pg` (npm) | `apps/server` (saving games, P2-08) | 8.23.1 | MIT, as are the parts it brings in (`pg-pool`, `pg-protocol`, `pg-types` and the rest, held to the allowlist by CI) | Yes | None while the server is run as a service: it is not conveyed to users. Keep its notice if the server is ever distributed. |
 | [ws](https://github.com/websockets/ws), `ws` (npm) | `apps/server` (game WebSocket, P2-05) | 8.22.1 | MIT | Yes | None while the server is run as a service: it is not conveyed to users. Keep its notice if the server is ever distributed. It has no runtime dependencies. |
+| [React](https://react.dev), `react` (npm) and `react-dom` (npm) | `apps/client` (the app shell, P2-14) | 19.3.1 | MIT, as is `scheduler`, which `react-dom` brings in | Yes | Conveyed to browsers in the client bundle, so its notice ships with it (X-07). |
 | Stockfish compiled to WebAssembly | `apps/client` (analysis board, P2-19) | Candidates: `@lichess-org/stockfish-web` 0.5.0, `stockfish` 19.0.1 | GPL-3.0 family (see note) | Yes, either candidate | Sent to the player's browser, so it is conveyed. GPL-3.0 section 6(d) allows the corresponding source to sit on another server, but we stay responsible for it being available, so mirror or pin the exact upstream source of the build we ship, and link to it beside the engine. Keep Stockfish's licence and acknowledgements with the build: its networks are trained on Leela Chess Zero data released under the Open Database License. |
 
 Note on the WebAssembly candidates: `stockfish` (nmrugg/stockfish.js) declares `GPL-3.0`. `@lichess-org/stockfish-web` declares `AGPL-3.0-or-later` in `package.json` but ships the GPL-3.0 text as its `LICENSE` file. Either reading is compatible; record which applies when P2-19 picks a build.
@@ -68,6 +69,9 @@ Used to build and check the code; not distributed with the app.
 | Node.js type definitions | `@types/node` (npm) | 24.19.2 | MIT |
 | node-postgres type definitions | `@types/pg` (npm) | 8.23.1 | MIT |
 | ws type definitions | `@types/ws` (npm) | 8.18.2 | MIT |
+| Vite, the client's bundler and development server | `vite` (npm) | 8.3.8 | MIT, as is Rolldown, which it brings in to build the bundle; neither is part of the bundle |
+| Vite's React support | `@vitejs/plugin-react` (npm) | 6.3.0 | MIT |
+| React type definitions | `@types/react` (npm), `@types/react-dom` (npm) | 19.3.0 | MIT |
 | oxlint, the linter Lichess uses | `oxlint` (npm) | 1.89.0 | MIT |
 | oxlint's type-aware rules | `oxlint-tsgolint` (npm) | 7.0.2005 | MIT |
 | oxfmt, the formatter Lichess uses | `oxfmt` (npm) | 0.74.0 | MIT |
