@@ -34,7 +34,7 @@ Exit test: after the eval ceiling and stability filters, every band you intend t
 - [x] **P1-03 Analysis runner.** Fixed node count, MultiPV 3, plus the shallower search; stores eval, shallow eval, best-move gap and mate flags. One thread and a fresh hash per search, parallel across positions, resumable after interruption. Done when re-running a sample gives identical evals.
 - **P1-04 and P1-05** became P3-01 and P3-02, both since retired; **P1-08** moved to Phase 3 as P3-04.
 - [ ] **P1-06 Filters.** Eval ceiling (absolute eval above 3, and every mate score) and stability; best-move gap recorded. Every threshold is configuration stored in the filter settings, and the run reports how many positions each filter removed.
-- [ ] **P1-07 Band coverage report.** Positions in Balanced, and in the 1-to-3 band split by which colour is better (Winning and Losing share these positions). Flags a colour split so uneven that equal average colours (D-13) cannot be reached.
+- [ ] **P1-07 Band coverage report.** Positions in Balanced and in the 1-to-3 band (Winning and Losing share its positions), with the share where White is better in each, reported but not tested (D-13).
 - [ ] **P1-09 Exit test.** Pass or fail per band against D-06. A failing band is dropped from launch, or a threshold changes, before any interface work.
 
 ## Phase 2 — Playable chess
@@ -102,7 +102,7 @@ Exit test: pool v1 is published, with every band intended for launch clearing D-
 - [ ] **P3-08 Transition tests.** One test per row of the table, plus property tests: every pairing ends Finished or Aborted, never more than three positions, and redraws never add to the abort count.
 - [ ] **P3-09 First-move timers.** White's, then Black's, restarted on every redraw; deadlines persisted so a restart resumes them. Expiry counts an abort against the player who did not move.
 - [ ] **P3-10 Abort limit.** At three consecutive aborts the abort control is disabled, but an unused redraw still works. Any finished game resets both players' counters.
-- [ ] **P3-11 Position draw.** Sample from the band in the current pool version, excluding positions either player has had within the exclusion window. *Needs D-13 for Balanced colours.*
+- [ ] **P3-11 Position draw.** Sample from the band in the current pool version, excluding positions either player has had within the exclusion window. In Balanced, colour is a fair coin independent of the position (D-13).
 - [ ] **P3-12 Band challenges.** Challenge links (P2-13) carry band and side and open a pairing, so pool games are playable before the lobby exists (D-04).
 - [ ] **P3-13 Pool fields on games.** `Game` records the position, pool version, each player's band and the pairing id.
 
@@ -206,7 +206,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 **Numbers to set**
 
 - [ ] **D-05 Live parameters.** First-move timer, disconnection grace, seek wait before widening (the doc's open question 1), recent-position exclusion window, pair-throttle limit, lag-compensation cap, high-deviation threshold. Decided 8 November 2026: the lag-compensation cap and disconnection grace are lila's (P2-07, P2-10); the rest are open.
-- [ ] **D-06 Pool depth.** Minimum positions for the Phase 1 and Phase 3 exit tests, counted for Balanced and for the 1-to-3 band by which colour is better. The exclusion window (D-05) already prevents repeats within a month at ten games a day (24 November 2026), so the number answers a different question: how large a pool a player studying it could not learn.
+- [ ] **D-06 Pool depth.** Minimum positions for the Phase 1 and Phase 3 exit tests, counted for Balanced and for the 1-to-3 band. Learning the pool is not judged a risk (24 November 2026), so the number is what the exclusion window (D-05) needs for a player on ten games a day to go a month without a repeat, with both players' recent positions excluded.
 - [ ] **D-07 Calibration tolerance.** Largest acceptable gap between actual and predicted score, and minimum games per cell.
 
 **Design questions**
@@ -216,7 +216,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 - [ ] **D-10 Update timing.** Rate after every game, as Lichess does, or batch into Glicko-2 rating periods.
 - [ ] **D-11 Where the offset sits.** Glicko-2 scales the rating difference by the opponent's deviation. If the offset sits inside that scaling, an uncertain opponent shrinks it, and the expected score shown before play is not the one used.
 - [ ] **D-12 Void replay scope.** Removing a voided game changes the player's rating before their later games. Do those later opponents keep their ratings, and which pre-game ratings does the re-fold use for them?
-- [ ] **D-13 Colour balance.** Players should have equal average numbers of positions as White and Black (24 November 2026). Balanced has no choice of side, so someone plays White and someone gets the better side: how are colours assigned there? In the 1-to-3 band colour follows the side, and White is better in about 81% of a sample, so a player who always takes Winning would mostly play White. Options: weight each draw by the player's colour history, which can starve the thinner cell; swap colours in pool positions, which is new scope and departs from real games; or balance only across a player's whole history.
+- [x] **D-13 Colour balance.** Decided 24 November 2026: no balancing mechanism. In Balanced the position is drawn at random and colour is a fair coin, which gives each player White and the better side about half the time each; in Winning and Losing colour follows the side. Colour swapping was rejected to keep real games (P3-11).
 - [ ] **D-14 Concentrating players.** The doc's open question 2. With one time control and no engine opponents, this may be a launch requirement rather than Phase 6.
 - [ ] **D-15 Band persistence.** The doc's open question 3: does a chosen band re-post after a return to the lobby?
 - [x] **D-16 Masters games source.** Decided 1 November 2026: Lichess's masters database (over-the-board games, FIDE 2200+, from 1952), read once through the opening explorer API (P1-10). TWIC was considered and dropped: it is free for personal use only.
