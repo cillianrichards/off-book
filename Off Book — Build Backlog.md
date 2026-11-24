@@ -25,7 +25,7 @@ Done when every push to `main` is checked in GitHub Actions on Linux and Windows
 
 ## Phase 1 — Pool feasibility
 
-Exit test: after the eval ceiling and stability filters, Balanced and the 1-to-3 band (shared by Winning and Losing) each hold at least 600 positions (D-06). Publishing waits for Phase 3, because it ships a pool rather than deciding whether one exists.
+Exit test: after the eval ceiling and stability filters, Balanced and Better and Worse (one band, shared by both options) each hold at least 600 positions (D-06). Publishing waits for Phase 3, because it ships a pool rather than deciding whether one exists.
 
 - [x] **P1-01 Pin Stockfish.** Stockfish 19, pinned by its source commit, bench signature and network file. Before analysing anything the pipeline runs `bench` and refuses to start if the signature differs; the binary's checksum is not checked, so any build of the release, on any platform, is accepted. All three go into `PoolVersion`. Done when the pinned build passes and an engine with a different signature is refused.
 - [x] **P1-02 Rare positions from games.** Stream a PGN collection, compressed or not, for collections that can be downloaded; Lichess's masters database is read through its API instead (P1-10). Count, for every position, the games that pass through it at any point: once per game however often it recurs, and once for a game that appears twice in the collection (same players, date and moves). A position is its placement, side to move, castling rights and an en passant square only when a capture is legal, so move order and counters do not matter. Candidates are positions reached by at least 2 games and by fewer than 0.05% of them that at least one game enters straight from a common position (reached by 0.05% or more) at ply 4 or later, excluding positions with no legal moves, positions where the side to move is in check, and positions mid-exchange (the side to move is behind and has a capture that comes out ahead once the exchange on its square is played out; decided 12 November 2026); each is written with the earliest ply any game reached it at and its share of games as its rarity score. Thresholds, the minimum ply and the source are filter settings, and the run reports how many positions each threshold removed. Done when counts on a small hand-made collection match by hand, a transposition and a duplicate game each count once, the starting position is never a candidate, a rare position further down a line that has already left common play is not one either, and a line that leaves common play before ply 4 gives none.
@@ -34,8 +34,8 @@ Exit test: after the eval ceiling and stability filters, Balanced and the 1-to-3
 - [x] **P1-03 Analysis runner.** Fixed node count, MultiPV 3, plus the shallower search; stores eval, shallow eval, best-move gap and mate flags. One thread and a fresh hash per search, parallel across positions, resumable after interruption. Done when re-running a sample gives identical evals.
 - **P1-04 and P1-05** became P3-01 and P3-02, both since retired; **P1-08** moved to Phase 3 as P3-04.
 - [x] **P1-06 Filters.** Eval ceiling (absolute eval above 3, and every mate score) and stability (a shallow-to-deep swing above 100 centipawns, decided 24 November 2026); best-move gap recorded. Every threshold is configuration stored in the filter settings, and the run reports how many positions each filter removed. Built 24 November 2026: it refuses an analysis that is unfinished or of other candidates. On the masters candidates the ceiling removes 54 and stability 36, leaving 18,216 of 18,306.
-- [x] **P1-07 Band coverage report.** Positions in Balanced and in the 1-to-3 band (Winning and Losing share its positions), with the share where White is better in each, reported but not tested (D-13). Built 24 November 2026, banding on the deep eval alone. On the filtered masters candidates: Balanced 16,908 (White better in 80%, Black in 3,124, level in 207); Winning and Losing 1,308 (White better in 95%, Black in 69).
-- [x] **P1-09 Exit test.** Pass or fail per band against D-06's 600. A failing band is dropped from launch, or a threshold changes, before any interface work. Passed 24 November 2026 on the filtered masters candidates: Balanced 16,908 and Winning and Losing 1,308, so Phase 1 is complete and no band is dropped.
+- [x] **P1-07 Band coverage report.** Positions in Balanced and in Better and Worse (both options share its positions), with the share where White is better in each, reported but not tested (D-13). Built 24 November 2026, banding on the deep eval alone, with the edge at 0.75 of a pawn. On the filtered masters candidates: Balanced 15,278 (White better in 79%, Black in 3,039, level in 207); Better and Worse 2,938 (White better in 95%, Black in 154).
+- [x] **P1-09 Exit test.** Pass or fail per band against D-06's 600. A failing band is dropped from launch, or a threshold changes, before any interface work. Passed 24 November 2026 on the filtered masters candidates: Balanced 15,278 and Better and Worse 2,938, so Phase 1 is complete and no band is dropped.
 
 ## Phase 2 — Playable chess
 
@@ -145,7 +145,7 @@ Exit test: players find games through the lobby alone, and a collusion case can 
 
 - [ ] **P5-01 Seeks.** Post, cancel and expire seeks carrying time control, band, side and an inert opponent range.
 - [ ] **P5-02 Live lobby.** What is actually available, by band and side, pushed over WebSocket.
-- [ ] **P5-03 Matching.** Losing pairs with Winning, Balanced with Balanced; exact matches first.
+- [ ] **P5-03 Matching.** Worse pairs with Better, Balanced with Balanced; exact matches first.
 - [ ] **P5-04 Widening.** After the wait, pair with any waiting seek: the requested band if compatible, otherwise Balanced. Respects P4-14.
 - [ ] **P5-05 Opponent range, switched off.** Built and tested behind a flag.
 - [ ] **P5-06 Pair throttling.** Rate-limit repeat pairings between the same two accounts.
@@ -206,7 +206,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 **Numbers to set**
 
 - [ ] **D-05 Live parameters.** First-move timer, disconnection grace, seek wait before widening (the doc's open question 1), recent-position exclusion window, pair-throttle limit, lag-compensation cap, high-deviation threshold. Decided 8 November 2026: the lag-compensation cap and disconnection grace are lila's (P2-07, P2-10); the rest are open.
-- [x] **D-06 Pool depth.** Decided 24 November 2026: at least 600 positions in Balanced and in the 1-to-3 band, after the filters, for the Phase 1 and Phase 3 exit tests. Two players on ten games a day, with each other's recent positions excluded, need about 600 neither has seen in a month (D-05 sets the window). If a band falls short, the likely next step is crawling Lichess players' games above a rating floor, beyond the masters database.
+- [x] **D-06 Pool depth.** Decided 24 November 2026: at least 600 positions in Balanced and in Better and Worse, after the filters, for the Phase 1 and Phase 3 exit tests. Two players on ten games a day, with each other's recent positions excluded, need about 600 neither has seen in a month (D-05 sets the window). If a band falls short, the likely next step is crawling Lichess players' games above a rating floor, beyond the masters database.
 - [ ] **D-07 Calibration tolerance.** Largest acceptable gap between actual and predicted score, and minimum games per cell.
 
 **Design questions**
@@ -216,7 +216,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 - [ ] **D-10 Update timing.** Rate after every game, as Lichess does, or batch into Glicko-2 rating periods.
 - [ ] **D-11 Where the offset sits.** Glicko-2 scales the rating difference by the opponent's deviation. If the offset sits inside that scaling, an uncertain opponent shrinks it, and the expected score shown before play is not the one used.
 - [ ] **D-12 Void replay scope.** Removing a voided game changes the player's rating before their later games. Do those later opponents keep their ratings, and which pre-game ratings does the re-fold use for them?
-- [x] **D-13 Colour balance.** Decided 24 November 2026: no balancing mechanism. In Balanced the position is drawn at random and colour is a fair coin, which gives each player White and the better side about half the time each; in Winning and Losing colour follows the side. Colour swapping was rejected to keep real games (P3-11).
+- [x] **D-13 Colour balance.** Decided 24 November 2026: no balancing mechanism. In Balanced the position is drawn at random and colour is a fair coin, which gives each player White and the better side about half the time each; in Better and Worse colour follows the side. Colour swapping was rejected to keep real games (P3-11).
 - [ ] **D-14 Concentrating players.** The doc's open question 2. With one time control and no engine opponents, this may be a launch requirement rather than Phase 6.
 - [ ] **D-15 Band persistence.** The doc's open question 3: does a chosen band re-post after a return to the lobby?
 - [x] **D-16 Masters games source.** Decided 1 November 2026: Lichess's masters database (over-the-board games, FIDE 2200+, from 1952), read once through the opening explorer API (P1-10). TWIC was considered and dropped: it is free for personal use only.

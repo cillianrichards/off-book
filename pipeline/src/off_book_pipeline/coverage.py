@@ -2,9 +2,9 @@
 
 Positions fall into two bands by the size of their deep eval (decided 24 November 2026):
 
-- Balanced: absolute eval under 1 pawn. Players take no side, and colour is a fair coin.
-- Winning and Losing: absolute eval from 1 pawn to the ceiling. Both options draw from the same positions,
-  so they are one band here.
+- Balanced: absolute eval under 0.75 of a pawn. Players take no side, and colour is a fair coin.
+- Better and Worse: absolute eval from 0.75 of a pawn to the ceiling. Both options draw from the same
+  positions, so they are one band here.
 
 The report counts each band's positions and how many favour White, favour Black or are exactly level. The
 colour split is reported, not tested: no colour balancing depends on it (D-13).
@@ -26,8 +26,8 @@ from pathlib import Path
 from off_book_pipeline.analyse import Analysis
 from off_book_pipeline.filters import read_filtered
 
-BALANCED_BELOW_CP = 100
-"""The edge between the bands: a position at exactly 1 pawn is in Winning and Losing."""
+BALANCED_BELOW_CP = 75
+"""The edge between the bands (decided 24 November 2026): a position at exactly 75 is in Better and Worse."""
 
 MINIMUM_POSITIONS = 600
 """D-06: the fewest positions a band may hold after filtering and still pass the exit test."""
@@ -35,13 +35,13 @@ MINIMUM_POSITIONS = 600
 
 class Band(StrEnum):
     BALANCED = "Balanced"
-    WINNING_LOSING = "Winning and Losing"
+    BETTER_WORSE = "Better and Worse"
 
 
 def band_of(analysis: Analysis) -> Band:
     if analysis.eval_cp is None:
         raise ValueError(f"{analysis.fen} has a mate score; filter the positions first.")
-    return Band.BALANCED if abs(analysis.eval_cp) < BALANCED_BELOW_CP else Band.WINNING_LOSING
+    return Band.BALANCED if abs(analysis.eval_cp) < BALANCED_BELOW_CP else Band.BETTER_WORSE
 
 
 @dataclass(frozen=True)
