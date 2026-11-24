@@ -103,6 +103,8 @@ The masters candidates come from Lichess's masters database (P1-10), in two step
 
 Analyse the candidates (P1-03) with `uv run python -m off_book_pipeline.analyse CANDIDATES OUTPUT --engine PATH_TO_STOCKFISH` (or set `OFF_BOOK_STOCKFISH`). It checks the engine first, runs one Stockfish per CPU core unless `--workers` says otherwise, and appends each result to OUTPUT as JSON Lines. If it stops for any reason, run the same command again to carry on. At the default 100,000 and 10,000 nodes it takes about a quarter of a second per position per core. `--nodes` and `--shallow-nodes` change the search, but only for a new OUTPUT.
 
+Filter the finished analysis (P1-06) with `uv run python -m off_book_pipeline.filters CANDIDATES ANALYSIS OUTPUT`. It drops positions beyond the eval ceiling (an absolute eval above 300 centipawns, or any mate) and unstable ones (an eval that moves more than 100 centipawns between the shallow and deep searches); `--eval-ceiling-cp` and `--max-swing-cp` change the thresholds. It refuses an analysis that has not finished or was run on another candidates file. OUTPUT holds the positions kept, with the analysis run and filter settings in its first line, and `OUTPUT.report.json` says how many each filter removed.
+
 Local database: Docker with Compose. PostgreSQL 18 runs in a container, bound to localhost, and dbmate applies the migrations in `db/migrations`.
 
 ```sh
