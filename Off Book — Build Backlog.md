@@ -49,7 +49,7 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 
 **Hosting and accounts**
 
-- [ ] **P2-01 Staging environment.** Container Apps and Azure Database for PostgreSQL for staging, defined as code and deployed from GitHub Actions. Secrets in Key Vault. Staging only until launch, sized for the least cost; production is X-11. Written 27 November 2026, awaiting a subscription: `infra/main.bicep` and `staging.bicepparam` (placeholders for the budget and its email), `.github/workflows/deploy-staging.yml` (skips itself until the `staging` environment's variables are set), and the app and migration images, which CI builds and runs against the compose database on every push. Set-up steps are in the README. Known gap: Container Apps starts a new revision before stopping the old one, so during a deploy two server processes briefly hold the same live games, and the new one loads them before the old one has saved its last moves; deploy staging only when no game is in play until this is fixed.
+- [ ] **P2-01 Staging environment.** Container Apps and Azure Database for PostgreSQL for staging, defined as code and deployed from GitHub Actions. Secrets in Key Vault. Staging only until launch, sized for the least cost; production is X-11. Written 27 November 2026, awaiting a subscription: `infra/main.bicep` and `staging.bicepparam` (placeholders for the budget and its email), `.github/workflows/deploy-staging.yml` (skips itself until the `staging` environment's variables are set), and the app and migration images, which CI builds and runs against the compose database on every push. Set-up steps are in the README. Known gap: Container Apps starts a new revision before stopping the old one, so during a deploy two server processes briefly hold the same live games, and the new one loads them before the old one has saved its last moves; deploy staging only when no game is in play until P2-26 fixes it.
 - [ ] **P2-02 Sign in with Lichess.** OAuth 2 with PKCE against Lichess (D-09). `User` with Off Book's own id, handle and status; `Identity` links a Lichess account id to it. Sign-in also asks for `email:read` (D-17): the address, which a Lichess account may lack, is read from `/api/account/email` and kept on `User`, refreshed at every sign-in. Off Book issues its own session, and the Lichess token is discarded once the account id and email are read. A development-only sign-in for the seed's test users (P2-20), refused outside the local stack, so one person can play both sides.
 
 **Rules**
@@ -75,7 +75,8 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 - [ ] **P2-22 Draw offers.** Offer, accept and decline. An offer lapses when its receiver moves, repeated offers are limited as lila limits them, and an offer standing when its maker plays a threefold repetition becomes a claim, as on Lichess.
 - [ ] **P2-23 Threefold claims.** On the player's turn after a threefold repetition, a control claims the draw for the position on the board. A preference claims it automatically, with lila's choices: always, with under 30 seconds left, or never. Fivefold repetition already ends the game (P2-03).
 - [ ] **P2-24 More time.** Either player may give the opponent 15 seconds, as lila's "give more time" does.
-- [ ] **P2-25 Takebacks.** Propose, accept and decline, in unrated games. Whether rated games allow them waits for D-21.
+- [ ] **P2-25 Takebacks.** Propose, accept and decline, as lila's takeback offers work. A preference, as lila's, says whose offers a player will see: always, in unrated games only, or never. Rated games allow them too (D-21).
+- [ ] **P2-26 One server per database.** A process holds a PostgreSQL advisory lock for as long as it loads, plays or saves games, and one that cannot take it, or loses its connection holding it, plays none. This makes a second process harmless however it arises, including Container Apps starting a new revision before stopping the old one (P2-01). Done when a test starts a second process mid-game and no move is lost or overwritten. *Needs D-23.*
 
 **Client**
 
@@ -117,6 +118,7 @@ Exit test: pool v1 is published, with every band intended for launch clearing D-
 **Client**
 
 - [ ] **P3-14 Reveal screen.** Position, eval, the player's side, redraw and abort with the allowance left, first-move countdown.
+- [ ] **P3-15 Rematch.** Offered and accepted from the result screen, as on Lichess: a new game between the same two players from the same starting FEN, with colours swapped (D-20). It has no reveal or redraw, since both have seen the position, but the first-move timers still apply. It is exempt from the recent-position exclusion (P3-11), and in a rated game each player's offset follows their new side.
 
 ## Phase 4 — Calibration and ratings
 
@@ -163,10 +165,12 @@ Exit test: players find games through the lobby alone, and a collusion case can 
 **Integrity**
 
 - [ ] **P5-09 Flags and review queue.** `Flag` on a player, pair or game, with a status workflow and an admin screen to review evidence and decide.
-- [ ] **P5-10 Collusion signals.** Repeat pairings; the better side resigning, flagging or blundering early; account age; device signals. *Needs X-05 for device signals.*
+- [ ] **P5-10 Collusion signals.** Repeat pairings, rematches included; the better side resigning, flagging or blundering early; takebacks granted in rated games; account age; device signals. *Needs X-05 for device signals.*
 - [ ] **P5-11 Void action.** From the review screen, runs P4-17 and records who voided what and why.
 - [ ] **P5-12 Abort-shopping report.** Abort and redraw patterns per player, set against the positions they declined.
 - [ ] **P5-13 Fair-play policy.** Public page: what is checked, what happens, how to appeal.
+- [ ] **P5-14 In-game chat.** The two players chat during and after their game, as on Lichess, with lila's preset messages and a preference to switch chat off. Messages are kept in a `Chat` per game, apart from the `Game` row as lila keeps them, limited in length and rate (X-04), and links are not made clickable (D-22).
+- [ ] **P5-15 Chat moderation.** Reporting a message raises a `Flag` (P5-09) carrying it. A moderator can mute a player, and, as lila's troll flag does, a muted player's messages are shown only to themselves. A filter holds back messages matching a word list for review. *Needs P5-09.*
 
 ## Phase 6 — Scale and refine
 
@@ -193,7 +197,7 @@ These run alongside Phases 2 to 5 and must be done before launch.
 - [ ] **X-02 Backups.** PostgreSQL point-in-time restore, proven by actually restoring.
 - [ ] **X-03 Load test.** Simulated players against one process, to find its ceiling in concurrent games.
 - [ ] **X-04 Rate limits.** API and WebSocket message limits per connection and per account.
-- [ ] **X-05 Privacy.** UK GDPR privacy notice, lawful basis for device signals, data export and account deletion. Deletion anonymises the user but keeps games and rating events, because opponents' histories depend on them.
+- [ ] **X-05 Privacy.** UK GDPR privacy notice, lawful basis for device signals, how long chat messages are kept (P5-14), data export and account deletion. Deletion anonymises the user but keeps games and rating events, because opponents' histories depend on them.
 - [ ] **X-06 Terms and cookies.** Terms of service and cookie consent.
 - [ ] **X-07 Licence compliance.** The deployed app links to the exact source commit it is running, as the AGPL requires for network users. It serves a third-party notices page generated from the shipped client bundle, not kept by hand; chess.js's BSD licence requires this. The analysis board links to the exact source of the Stockfish build it serves, with Stockfish's licence and acknowledgements. Done when all three can be followed from production. Due before anyone other than the developer uses a deployed build, which is assumed to be launch.
 - [ ] **X-08 Security.** Dependency scanning in CI, secrets out of the repository, session and CSRF protection.
@@ -232,6 +236,7 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 - [x] **D-17 Contact details.** Decided 27 November 2026: yes. Sign-in asks Lichess for the `email:read` scope, so an account can be recovered if Lichess sign-in stops working. Off Book therefore holds personal data under UK GDPR from the first sign-in, so X-05's privacy notice must exist before anyone but the developer signs in (P2-02).
 - [x] **D-18 Starting depth.** Decided 1 November 2026: no upper ply bound and a minimum of four plies. A candidate is the rare position where a game leaves commonly played positions, so its depth varies by line (P1-02).
 - [ ] **D-19 Rare choice from the parent.** A candidate can be rare against all master games yet the usual reply where it is played: 7...Bb4 in the Cambridge Springs (1,042 games) is the main move from a position just over the common line, so a prepared player knows it. Accepted for now (12 November 2026), and deferred past the Phase 1 exit test and the first release (24 November 2026): adopting it can only shrink the pool, and it would cut mostly near-level positions, where Balanced has plenty to spare. A flat cap on games was rejected as blunt; the candidate fix is nuanced: the move into a candidate must be played in under some share of its parent's games. The crawl's store already holds the counts to measure it offline. Decide whether to adopt it, and the share, from what each share would keep and examples of what it removes.
-- [ ] **D-20 Rematch.** Lichess offers a rematch with colours swapped. Off Book could replay the same position with colours swapped, draw a new position from the same band, or have no rematch and send both players back to the lobby. Replaying swaps colours, which D-13 rejected for ordinary pairing, and repeat pairings are a collusion signal (P5-10). Needs deciding before the lobby (Phase 5).
-- [ ] **D-21 Takebacks in rated games.** Lichess allows them by mutual consent. With an offset at stake, a takeback agreed between friends is a cheap way to move rating, so the choice is allowing them as Lichess does, only in unrated games, or not at all. Needed by Phase 4.
-- [ ] **D-22 Chat.** Lichess has in-game chat with moderation and reporting. Off Book would need the same, and would hold the messages under X-05. The choice is chat at launch, preset messages only, or none.
+- [x] **D-20 Rematch.** Decided 27 November 2026: rematches are offered, as on Lichess, from the same starting FEN with colours swapped, so each player has had both sides of the position. Unlike D-13's colour swapping this is chosen by both players, and repeat pairings stay a collusion signal (P3-15, P5-10).
+- [x] **D-21 Takebacks in rated games.** Decided 27 November 2026: allowed in every game by mutual consent, as on Lichess, with lila's preference to refuse them in rated games or altogether. Takebacks granted in rated games become a collusion signal (P2-25, P5-10).
+- [x] **D-22 Chat.** Decided 27 November 2026: in-game chat between the two players at launch, as on Lichess, with preset messages, a preference to switch it off, reporting and muting (P5-14, P5-15). Messages are personal data, kept under X-05.
+- [ ] **D-23 Deploying the one server.** With P2-26's lock, how a new process takes over. Hand-over: the new revision starts and passes its health check, then waits for the lock, which the old one releases once it has saved every game after SIGTERM; it loads the games and takes the reconnecting players. Stop then start, as lila deploys: the old process stops before the new one starts, which is simpler but adds the new one's cold start to the gap players wait through. Hand-over is recommended: the lock does the work either way, and it keeps the gap to saving and loading. Needed by P2-26.
