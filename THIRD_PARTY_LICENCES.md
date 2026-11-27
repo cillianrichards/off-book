@@ -30,6 +30,7 @@ Transitive packages are held to the allowlist but not listed here, because this 
 | [node-postgres](https://github.com/brianc/node-postgres), `pg` (npm) | `apps/server` (saving games, P2-08) | 8.23.1 | MIT, as are the parts it brings in (`pg-pool`, `pg-protocol`, `pg-types` and the rest, held to the allowlist by CI) | Yes | None while the server is run as a service: it is not conveyed to users. Keep its notice if the server is ever distributed. |
 | [ws](https://github.com/websockets/ws), `ws` (npm) | `apps/server` (game WebSocket, P2-05) | 8.22.1 | MIT | Yes | None while the server is run as a service: it is not conveyed to users. Keep its notice if the server is ever distributed. It has no runtime dependencies. |
 | [React](https://react.dev), `react` (npm) and `react-dom` (npm) | `apps/client` (the app shell, P2-14) | 19.3.1 | MIT, as is `scheduler`, which `react-dom` brings in | Yes | Conveyed to browsers in the client bundle, so its notice ships with it (X-07). |
+| Node.js, in the app image's base `node:24.22.3-slim` (Docker) | `Dockerfile` (the deployed app, P2-01) | 24.22.3 | MIT for Node.js; the image's Debian layer is a mix of free licences, mostly GPL and LGPL | Yes | Pushed to GitHub's container registry, so the image is distributed. Debian's licences for each package sit in the image under `/usr/share/doc`; its corresponding source is Debian's, at the release the image names. |
 | Stockfish compiled to WebAssembly | `apps/client` (analysis board, P2-19) | Candidates: `@lichess-org/stockfish-web` 0.5.0, `stockfish` 19.0.1 | GPL-3.0 family (see note) | Yes, either candidate | Sent to the player's browser, so it is conveyed. GPL-3.0 section 6(d) allows the corresponding source to sit on another server, but we stay responsible for it being available, so mirror or pin the exact upstream source of the build we ship, and link to it beside the engine. Keep Stockfish's licence and acknowledgements with the build: its networks are trained on Leela Chess Zero data released under the Open Database License. |
 
 Note on the WebAssembly candidates: `stockfish` (nmrugg/stockfish.js) declares `GPL-3.0`. `@lichess-org/stockfish-web` declares `AGPL-3.0-or-later` in `package.json` but ships the GPL-3.0 text as its `LICENSE` file. Either reading is compatible; record which applies when P2-19 picks a build.
@@ -64,7 +65,7 @@ Used to build and check the code; not distributed with the app.
 | Tool | Package | Version | Licence |
 | --- | --- | --- | --- |
 | PostgreSQL, the local stack's database | Docker image `postgres`, pinned by digest in `compose.yaml` | 18 | PostgreSQL Licence (permissive). The image is pulled and run, not redistributed; its Debian base packages carry their own licences |
-| dbmate, the migration tool | Docker image `ghcr.io/amacneil/dbmate`, pinned by digest in `compose.yaml` | 2.37.0 | MIT |
+| dbmate, the migration tool | Docker image `ghcr.io/amacneil/dbmate`, pinned by digest in `compose.yaml` and `db/Dockerfile` | 2.37.0 | MIT. `db/Dockerfile` builds the migration image on it, which is pushed to GitHub's container registry, so dbmate's licence travels inside that image |
 | TypeScript | `typescript` (npm) | 6.0.3 | Apache-2.0 |
 | Node.js type definitions | `@types/node` (npm) | 24.19.2 | MIT |
 | node-postgres type definitions | `@types/pg` (npm) | 8.23.1 | MIT |

@@ -149,3 +149,61 @@ jobs:
       - name: Show the database log on failure
         if: failure()
         run: docker compose logs db
+
+  images:
+    # The deployable images (P2-01), built and run as staging runs them: migrations applied by the
+    # migration image, then the app image serving the API and the client bundle against that database,
+    # and stopping cleanly on SIGTERM.
+    name: Images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the app image
+        run: docker build --tag off-book:ci .
+      - name: Build the migration image
+        run: docker build --tag off-book-migrate:ci --file db/Dockerfile .
+      - name: Start PostgreSQL
+        run: docker compose up --wait db
+      - name: Migrate with the migration image
+        run: |
+          docker run --rm --network host \
+            --env DATABASE_URL='postgres://off_book:off_book@127.0.0.1:5432/off_book?sslmode=disable' \
+            off-book-migrate:ci
+      - name: Run the app image
+        run: |
+          docker run --detach --name app --network host \
+            --env DATABASE_URL='postgres://off_book:off_book@127.0.0.1:5432/off_book' off-book:ci
+          curl --silent --show-error --fail --retry 20 --retry-delay 1 --retry-all-errors http://127.0.0.1:8080/health
+      - name: Check it serves the API and the client
+        run: |
+          curl --silent --show-error --fail http://127.0.0.1:8080/ | grep --quiet 'rel="manifest"'
+          curl --silent --show-error --fail http://127.0.0.1:8080/abcd1234 | grep --quiet 'id="root"'
+          curl --silent --show-error --fail http://127.0.0.1:8080/manifest.webmanifest | grep --quiet '"Off Book"'
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8080/api/games/abcd1234)
+          test "$status" = 404
+      - name: Stop it cleanly
+        run: |
+          docker stop --time 30 app
+          test "$(docker inspect --format '{{.State.ExitCode}}' app)" = 0
+          docker logs app 2>&1 | grep --quiet '"stopped"'
+      - name: Show the app's log on failure
+        if: failure()
+        run: docker logs app || true
+
+  infra:
+    # The Azure templates (P2-01) compile and pass Bicep's linter, so a broken template fails here, not at
+    # deploy time. The param file reads its images and password from the environment, faked here.
+    name: Infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: az bicep install
+      - name: Compile and lint the template
+        run: |
+          az bicep build --file infra/main.bicep --stdout > /dev/null
+          az bicep lint --file infra/main.bicep
+      - name: Compile the staging parameters
+        env:
+          MIGRATE_IMAGE: ghcr.io/example/off-book-migrate:ci
+          POSTGRES_ADMIN_PASSWORD: not-a-real-password
+        run: az bicep build-params --file infra/staging.bicepparam --stdout > /dev/null

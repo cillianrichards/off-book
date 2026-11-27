@@ -1,0 +1,11 @@
+# Only what the images copy is needed; everything else stays out of the build context.
+**/node_modules
+**/dist
+.git
+.github
+.env
+.env.*
+pipeline
+infra
+*.md
+!THIRD_PARTY_LICENCES.md

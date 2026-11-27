@@ -9,6 +9,7 @@ An open-source chess app in which every game starts from a pre-played position, 
 | `packages/rules` | Shared chess rules (chess.js), used identically by client and server |
 | `apps/server` | Live server: one Node.js process |
 | `apps/client` | Progressive web app |
+| `infra/` | Azure staging environment as Bicep, deployed by `.github/workflows/deploy-staging.yml` |
 | `pipeline/` | Offline Python pipeline that builds the position pool and rating calibration |
 | `tools/licence-check` | CI's licence check: every package against an allowlist, every direct dependency against `THIRD_PARTY_LICENCES.md` |
 
@@ -138,6 +139,23 @@ pnpm check-licences
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these on every push to `main`.
+
+## Deploying to staging
+
+Staging is the only Azure environment until launch (P2-01); production comes from the same template later (X-11). `infra/main.bicep` defines it: Azure Container Apps on the Consumption plan, one app capped at one replica because live games are held in its memory (D-01), a job that runs the migrations, PostgreSQL 18 on the cheapest Burstable tier, Key Vault for the database URL, and a monthly budget alert. `.github/workflows/deploy-staging.yml` deploys every commit that passes CI on `main`. Until the set-up below is done it skips itself, so `main` stays green.
+
+The images are built with `docker build .` (the app) and `docker build -f db/Dockerfile .` (the migrations). CI builds both on every push and runs them against the compose database.
+
+One-off set-up, once there is a subscription. Replace each value in angle brackets:
+
+1. Create the resource group, in UK South for players in Britain: `az group create --name rg-offbook-staging --location uksouth`.
+2. Let GitHub sign in without a stored secret. Create an app registration and its service principal (`az ad app create --display-name off-book-github`, then `az ad sp create --id <appId>`). Add a federated credential to it with issuer `https://token.actions.githubusercontent.com`, subject `repo:cillianrichards/off-book:environment:staging` and audience `api://AzureADTokenExchange`.
+3. Give it the resource group and nothing more: `Contributor`, plus `Role Based Access Control Administrator` so the template can let the app read Key Vault. Assign both with `az role assignment create --assignee <appId> --role <role> --scope <resource group id>`.
+4. In GitHub, create an environment named `staging`. Give it the variables `AZURE_CLIENT_ID` (the app id), `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` and `AZURE_RESOURCE_GROUP` (`rg-offbook-staging`), and the secret `POSTGRES_ADMIN_PASSWORD` (generate one with `openssl rand -base64 32`).
+5. In `infra/staging.bicepparam`, set `monthlyBudget` and `budgetContactEmails`, which are placeholders.
+6. Run the workflow from the Actions tab. GitHub's container registry makes new packages private, so the first run fails when Azure pulls the migration image. Make the `off-book` and `off-book-migrate` packages public in their settings, then run it again. Alternatively, keep them private and set `REGISTRY_SERVER` (`ghcr.io`) and `REGISTRY_USERNAME` as variables and `REGISTRY_PASSWORD` (a token with `read:packages`) as a secret on the environment.
+
+What staging costs: the app scales to none when idle and fits the Container Apps free grant, so most of the bill is PostgreSQL B1ms and its storage. A new Azure account's free offer covers B1ms for its first year. Stopping the server when it is not needed (`az postgres flexible-server stop`) saves the compute for up to seven days at a time, after which Azure restarts it.
 
 ## Licence
 

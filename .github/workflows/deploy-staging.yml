@@ -1,0 +1,125 @@
+# Deploys main to staging once CI has passed on it, or by hand (P2-01). Does nothing until the Azure
+# variables below are set on the repository's `staging` environment, so it is safe to keep on main before
+# a subscription exists. One-off set-up is in the README, under "Deploying to staging".
+#
+# Each run: build and push both images to GitHub's container registry; apply infra/main.bicep with the
+# app left on its current image; run the migration job to completion; then move the app to the new
+# image and check it answers. Migrations therefore always land before the code that needs them.
+#
+# Signs in to Azure with OpenID Connect through the Azure CLI, so no Azure secret is stored in GitHub.
+
+name: Deploy to staging
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time, and never cancelled halfway.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: staging
+    if: >-
+      vars.AZURE_CLIENT_ID != '' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.COMMIT }}
+
+      - name: Build and push images
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          server="ghcr.io/$owner/off-book:$COMMIT"
+          migrate="ghcr.io/$owner/off-book-migrate:$COMMIT"
+          echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker build --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$COMMIT" --tag "$server" .
+          docker build --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$COMMIT" --tag "$migrate" --file db/Dockerfile .
+          docker push "$server"
+          docker push "$migrate"
+          echo "NEW_SERVER_IMAGE=$server" >> "$GITHUB_ENV"
+          echo "MIGRATE_IMAGE=$migrate" >> "$GITHUB_ENV"
+
+      - name: Sign in to Azure
+        run: |
+          token=$(curl --silent --show-error --fail \
+            --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq --raw-output .value)
+          az login --service-principal --username "$AZURE_CLIENT_ID" --tenant "$AZURE_TENANT_ID" \
+            --federated-token "$token" --output none
+          az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+          az bicep install
+
+      - name: Apply the infrastructure, keeping the app on its current image
+        env:
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          REGISTRY_SERVER: ${{ vars.REGISTRY_SERVER }}
+          REGISTRY_USERNAME: ${{ vars.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          # Empty on the first deploy, which then creates everything but the app.
+          SERVER_IMAGE=$(az containerapp show --resource-group "$RESOURCE_GROUP" --name ca-offbook-staging \
+            --query 'properties.template.containers[0].image' --output tsv 2>/dev/null || true)
+          export SERVER_IMAGE
+          az deployment group create --resource-group "$RESOURCE_GROUP" --name "infra-$COMMIT" \
+            --parameters infra/staging.bicepparam --output none
+
+      - name: Migrate the database
+        run: |
+          execution=$(az containerapp job start --resource-group "$RESOURCE_GROUP" \
+            --name job-offbook-staging-migrate --query name --output tsv)
+          for _ in $(seq 120); do
+            status=$(az containerapp job execution show --resource-group "$RESOURCE_GROUP" \
+              --name job-offbook-staging-migrate --job-execution-name "$execution" \
+              --query properties.status --output tsv)
+            echo "migration $execution: $status"
+            case "$status" in
+              Succeeded) exit 0 ;;
+              Failed|Stopped|Degraded) exit 1 ;;
+            esac
+            sleep 5
+          done
+          echo "migration did not finish in ten minutes" >&2
+          exit 1
+
+      - name: Move the app to the new image
+        env:
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          REGISTRY_SERVER: ${{ vars.REGISTRY_SERVER }}
+          REGISTRY_USERNAME: ${{ vars.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          export SERVER_IMAGE="$NEW_SERVER_IMAGE"
+          url=$(az deployment group create --resource-group "$RESOURCE_GROUP" --name "app-$COMMIT" \
+            --parameters infra/staging.bicepparam --query properties.outputs.appUrl.value --output tsv)
+          echo "APP_URL=$url" >> "$GITHUB_ENV"
+          echo "### Staging: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check it answers
+        run: |
+          # Staging may be scaled to none, so the first request can wait for a cold start.
+          curl --silent --show-error --fail --retry 30 --retry-delay 5 --retry-all-errors "$APP_URL/health"
+          curl --silent --show-error --fail "$APP_URL/" | grep --quiet 'rel="manifest"'
