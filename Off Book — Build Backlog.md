@@ -49,8 +49,8 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 
 **Hosting and accounts**
 
-- [ ] **P2-01 Azure environments.** Container Apps and Azure Database for PostgreSQL for staging and production, defined as code and deployed from GitHub Actions. Secrets in Key Vault.
-- [ ] **P2-02 Sign in with Lichess.** OAuth 2 with PKCE against Lichess (D-09). `User` with Off Book's own id, handle and status; `Identity` links a Lichess account id to it. Off Book issues its own session, and the Lichess token is discarded once the account id is read. A development-only sign-in for the seed's test users (P2-20), refused outside the local stack, so one person can play both sides. *Needs D-17.*
+- [ ] **P2-01 Staging environment.** Container Apps and Azure Database for PostgreSQL for staging, defined as code and deployed from GitHub Actions. Secrets in Key Vault. Staging only until launch, sized for the least cost; production is X-11.
+- [ ] **P2-02 Sign in with Lichess.** OAuth 2 with PKCE against Lichess (D-09). `User` with Off Book's own id, handle and status; `Identity` links a Lichess account id to it. Sign-in also asks for `email:read` (D-17): the address, which a Lichess account may lack, is read from `/api/account/email` and kept on `User`, refreshed at every sign-in. Off Book issues its own session, and the Lichess token is discarded once the account id and email are read. A development-only sign-in for the seed's test users (P2-20), refused outside the local stack, so one person can play both sides.
 
 **Rules**
 
@@ -69,10 +69,18 @@ Plain chess is a milestone, not a product: only the developer plays it, and noth
 - [x] **P2-12 Game record.** The `Game` row is created when the game starts, with starting FEN, players and time control. While the game is played it holds the moves and each side's clock history, and it gets the result and termination when the game ends. No PGN file is stored: PGN is built from the row (P2-18), as lila does (D-02). Later phases add the pool, band, pairing, calibration and match fields.
 - [ ] **P2-13 Challenge links.** A private link carrying time control and starting FEN, the standard position by default, so games can be played before any pairing exists (D-04). Decide whether it survives as a feature.
 
+**Game actions** (added 27 November 2026, following lila's round)
+
+- [ ] **P2-21 Resign.** Either player may resign once the game can no longer be aborted, as in lila; until then the control is abort.
+- [ ] **P2-22 Draw offers.** Offer, accept and decline. An offer lapses when its receiver moves, repeated offers are limited as lila limits them, and an offer standing when its maker plays a threefold repetition becomes a claim, as on Lichess.
+- [ ] **P2-23 Threefold claims.** On the player's turn after a threefold repetition, a control claims the draw for the position on the board. A preference claims it automatically, with lila's choices: always, with under 30 seconds left, or never. Fivefold repetition already ends the game (P2-03).
+- [ ] **P2-24 More time.** Either player may give the opponent 15 seconds, as lila's "give more time" does.
+- [ ] **P2-25 Takebacks.** Propose, accept and decline, in unrated games. Whether rated games allow them waits for D-21.
+
 **Client**
 
 - [x] **P2-14 PWA shell.** React and TypeScript, installable, usable at phone width. Built 24 November 2026 with Vite (the conventional bundler; lila uses esbuild directly), game pages at `/:id` as lila's are, and a manifest with 192, 512 and maskable icons. There is no service worker: as in lila, which uses one only for push notifications, nothing is cached for offline use, and Chrome no longer needs one to install an app. Headless Chrome reports no installability errors, and the pages fit a 390-pixel screen.
-- [ ] **P2-15 Board.** chessground from any FEN, promotion picker, move list, sounds; decide on premoves.
+- [ ] **P2-15 Board.** chessground from any FEN, promotion picker, move list, sounds, and premoves as lila has them (decided 27 November 2026).
 - [ ] **P2-16 Clock display.** Counts down locally and corrects to every server message.
 - [ ] **P2-17 Result screen.** Result, termination reason, PGN download, link to analysis.
 
@@ -191,6 +199,7 @@ These run alongside Phases 2 to 5 and must be done before launch.
 - [ ] **X-08 Security.** Dependency scanning in CI, secrets out of the repository, session and CSRF protection.
 - [ ] **X-09 Accessibility.** Keyboard move entry, and screen-reader announcements of moves and clocks.
 - [ ] **X-10 Contributing guide.** Following Lichess, there is no contributor licence agreement: contributors keep their copyright and their work is licensed under AGPL-3.0-or-later when submitted. The guide says so, and covers what a good pull request looks like; setting up and running the checks are in the README (P0-06).
+- [ ] **X-11 Production environment.** A second environment from P2-01's templates, sized for launch rather than least cost, with backups (X-02) and alerts (X-01). Created only once launch is close, to avoid paying for it sooner.
 
 ## Decisions and spikes
 
@@ -220,6 +229,9 @@ Settle D-01, D-02 and the outbox half of D-03 at the start of Phase 2 (P2-00); e
 - [ ] **D-14 Concentrating players.** The doc's open question 2. With one time control and no engine opponents, this may be a launch requirement rather than Phase 6.
 - [ ] **D-15 Band persistence.** The doc's open question 3: does a chosen band re-post after a return to the lobby?
 - [x] **D-16 Masters games source.** Decided 1 November 2026: Lichess's masters database (over-the-board games, FIDE 2200+, from 1952), read once through the opening explorer API (P1-10). TWIC was considered and dropped: it is free for personal use only.
-- [ ] **D-17 Contact details.** Whether sign-in also asks Lichess for the player's email address (the `email:read` scope). With it, accounts can be recovered if Lichess sign-in stops working suddenly, at the cost of holding personal data under X-05 and a wider permission prompt. Without it, Off Book holds nothing personal beyond the Lichess account id, but a player who has not linked another sign-in method by then is locked out. Needed by P2-02.
+- [x] **D-17 Contact details.** Decided 27 November 2026: yes. Sign-in asks Lichess for the `email:read` scope, so an account can be recovered if Lichess sign-in stops working. Off Book therefore holds personal data under UK GDPR from the first sign-in, so X-05's privacy notice must exist before anyone but the developer signs in (P2-02).
 - [x] **D-18 Starting depth.** Decided 1 November 2026: no upper ply bound and a minimum of four plies. A candidate is the rare position where a game leaves commonly played positions, so its depth varies by line (P1-02).
 - [ ] **D-19 Rare choice from the parent.** A candidate can be rare against all master games yet the usual reply where it is played: 7...Bb4 in the Cambridge Springs (1,042 games) is the main move from a position just over the common line, so a prepared player knows it. Accepted for now (12 November 2026), and deferred past the Phase 1 exit test and the first release (24 November 2026): adopting it can only shrink the pool, and it would cut mostly near-level positions, where Balanced has plenty to spare. A flat cap on games was rejected as blunt; the candidate fix is nuanced: the move into a candidate must be played in under some share of its parent's games. The crawl's store already holds the counts to measure it offline. Decide whether to adopt it, and the share, from what each share would keep and examples of what it removes.
+- [ ] **D-20 Rematch.** Lichess offers a rematch with colours swapped. Off Book could replay the same position with colours swapped, draw a new position from the same band, or have no rematch and send both players back to the lobby. Replaying swaps colours, which D-13 rejected for ordinary pairing, and repeat pairings are a collusion signal (P5-10). Needs deciding before the lobby (Phase 5).
+- [ ] **D-21 Takebacks in rated games.** Lichess allows them by mutual consent. With an offset at stake, a takeback agreed between friends is a cheap way to move rating, so the choice is allowing them as Lichess does, only in unrated games, or not at all. Needed by Phase 4.
+- [ ] **D-22 Chat.** Lichess has in-game chat with moderation and reporting. Off Book would need the same, and would hold the messages under X-05. The choice is chat at launch, preset messages only, or none.
