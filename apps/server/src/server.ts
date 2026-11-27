@@ -5,6 +5,7 @@
 //            GET /api/games/:id       a game as anyone may see it
 //            GET /api/games/:id/pgn   the game as PGN, from its starting FEN (P2-18)
 // WebSocket: /play/:id                a player's connection to their game, as lila's round socket is
+// Anything else is the client's bundle, when the server is given one (P2-01).
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -12,6 +13,7 @@ import type { Duplex } from 'node:stream';
 
 import { type RawData, type WebSocket, WebSocketServer } from 'ws';
 
+import { type ClientFiles, clientFiles } from './client-files.ts';
 import { GAME_ID, type GameService, gamePgn, type PlayerSocket } from './game/index.ts';
 import { errorFields, type Log } from './log.ts';
 
@@ -29,6 +31,8 @@ export interface ServerOptions {
   readonly log: Log;
   /** How often to ping each WebSocket; one that has not answered the previous ping is dropped. */
   readonly heartbeatMs?: number;
+  /** The client's built bundle, served at every address the API does not use; none in development. */
+  readonly clientDir?: string;
 }
 
 export interface RunningServer {
@@ -46,9 +50,10 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
   const { games, authenticate, log } = options;
   const sockets = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
   const alive = new WeakSet<WebSocket>();
+  const client = options.clientDir === undefined ? undefined : clientFiles(options.clientDir);
 
   const http = createServer((request, response) => {
-    handleHttp(request, response, games).catch((error: unknown) => {
+    handleHttp(request, response, games, client).catch((error: unknown) => {
       log.error('http request failed', { url: request.url, ...errorFields(error) });
       if (!response.headersSent) json(response, 500, { error: 'Internal error' });
       else response.destroy();
@@ -131,6 +136,7 @@ async function handleHttp(
   request: IncomingMessage,
   response: ServerResponse,
   games: GameService,
+  client: ClientFiles | undefined,
 ): Promise<void> {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     response.setHeader('Allow', 'GET, HEAD');
@@ -158,6 +164,8 @@ async function handleHttp(
     response.end(request.method === 'HEAD' ? undefined : text);
     return;
   }
+  const isApi = path === '/api' || path.startsWith('/api/') || path.startsWith('/play/');
+  if (!isApi && client !== undefined && (await client.serve(request, response, path))) return;
   return json(response, 404, { error: 'Not found' });
 }
 

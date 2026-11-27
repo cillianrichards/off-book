@@ -4,6 +4,7 @@
 // Environment:
 //   DATABASE_URL   the PostgreSQL to save games in, at the latest migration (required)
 //   PORT           the port to listen on (default 8080)
+//   OFF_BOOK_CLIENT_DIR  the client's built bundle, served alongside the API (optional; deployments set it)
 
 import pg from 'pg';
 
@@ -43,7 +44,14 @@ export async function run(options: RunOptions): Promise<void> {
     ...(options.saveDelayMs === undefined ? {} : { saveDelayMs: options.saveDelayMs }),
   });
   await games.resume();
-  const server = await startServer({ port, games, authenticate: options.authenticate, log });
+  const clientDir = process.env.OFF_BOOK_CLIENT_DIR;
+  const server = await startServer({
+    port,
+    games,
+    authenticate: options.authenticate,
+    log,
+    ...(clientDir === undefined || clientDir === '' ? {} : { clientDir }),
+  });
   log.info('listening', { port: server.port });
 
   let stopping = false;
