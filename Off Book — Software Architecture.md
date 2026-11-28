@@ -164,7 +164,7 @@ TypeScript end to end for everything live, so client and server share one rules 
 | Layer | Choice | Reason |
 | --- | --- | --- |
 | Licence | AGPL-3.0-or-later; third-party licences in `THIRD_PARTY_LICENCES.md` | Server code stays open even when run as a service, the same choice Lichess made |
-| Repository | pnpm workspaces (`packages/rules`, `apps/server`, `apps/client`, `tools/`) plus `pipeline/` managed by uv | One repository, one shared rules package, pipeline kept independent |
+| Repository | pnpm workspaces (`packages/rules`, `packages/protocol`, `apps/server`, `apps/client`, `tools/`) plus `pipeline/` managed by uv | One repository, one shared rules package, pipeline kept independent |
 | Client | TypeScript, React, PWA, assembled from Lichess's open-source components: chessground, Stockfish compiled to WebAssembly, and logic ported from lila's TypeScript front end | One codebase for web and later native wrappers; Lichess has already solved most of what a chess client needs |
 | Board | chessground, npm `@lichess-org/chessground` (GPL-3.0-or-later) | The strongest open board, compatible now that the project is open source |
 | Post-game analysis | Stockfish compiled to WebAssembly (GPL-3.0), in the browser | Analysis costs no server CPU |

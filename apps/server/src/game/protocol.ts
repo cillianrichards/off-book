@@ -1,71 +1,12 @@
 // Messages on a player's game WebSocket, as JSON text frames. Clients only send intents; the server owns
 // the game and tells both players what happened.
 
-import type { Colour } from '@off-book/rules';
+// The message types themselves are shared with the client, in @off-book/protocol; this module checks what
+// clients send.
 
-import type { ClockReading, GameStatus, GameTermination, GameView, Result } from './live-game.ts';
+import type { ClientMessage } from '@off-book/protocol';
 
-export type ClientMessage =
-  | { readonly t: 'ping' }
-  /**
-   * A move meant for `ply`, the number of moves already played, so a resend is harmless (P2-06), with
-   * the network lag the client measures, in milliseconds, for lag compensation (P2-07).
-   */
-  | { readonly t: 'move'; readonly ply: number; readonly uci: string; readonly lag?: number }
-  | { readonly t: 'abort' }
-  /** Asks for the whole game again, as a client does when the plies it was sent skip one (P2-09). */
-  | { readonly t: 'resync' }
-  /** Claims the game from an opponent who has left it (P2-10). */
-  | { readonly t: 'claim'; readonly outcome: 'win' | 'draw' };
-
-export type Rejection =
-  | 'badMessage'
-  | 'gameOver'
-  | 'stale'
-  | 'notYourTurn'
-  | 'illegal'
-  | 'notAllowed'
-  /** The server is shutting down cleanly; the client should reconnect and resend (P2-08). */
-  | 'restarting'
-  /** The opponent has not been gone long enough, or it is the claimer's own turn (P2-10). */
-  | 'notClaimable';
-
-/** Whether a player's opponent is connected, and if not, from when the game can be claimed (P2-10). */
-export interface OpponentStatus {
-  readonly connected: boolean;
-  /** Epoch milliseconds; present while the opponent is disconnected from a game in play. */
-  readonly claimableAt?: number;
-}
-
-export type ServerMessage =
-  /**
-   * The whole game, sent on every connection and on request. The client rebuilds its board from these
-   * moves, never from its own history (P2-09).
-   */
-  | { readonly t: 'state'; readonly you: Colour; readonly game: GameView; readonly opponent: OpponentStatus }
-  /** The opponent has disconnected or come back. */
-  | ({ readonly t: 'opponent' } & OpponentStatus)
-  /** A move played, sent to both players; `ply` counts from 0, so a gap shows a missed message. */
-  | {
-      readonly t: 'move';
-      readonly ply: number;
-      readonly san: string;
-      readonly uci: string;
-      readonly fen: string;
-      readonly clock: ClockReading;
-    }
-  | {
-      readonly t: 'end';
-      readonly status: Exclude<GameStatus, 'started'>;
-      readonly result?: Result;
-      readonly termination: GameTermination;
-      readonly clock: ClockReading;
-    }
-  /** A resent move that was already played: nothing changed. */
-  | { readonly t: 'ack'; readonly ply: number }
-  /** An intent refused; `ply` is the game's current ply, so the client can tell it is behind. */
-  | { readonly t: 'rejected'; readonly reason: Rejection; readonly ply?: number }
-  | { readonly t: 'pong' };
+export type { ClientMessage, OpponentStatus, Rejection, ServerMessage } from '@off-book/protocol';
 
 const UCI = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
 // A reported lag beyond a minute is not lag; compensation is capped far below this anyway.

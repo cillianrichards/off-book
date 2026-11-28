@@ -16,10 +16,12 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/client/package.json apps/client/
 COPY apps/server/package.json apps/server/
 COPY packages/rules/package.json packages/rules/
+COPY packages/protocol/package.json packages/protocol/
 COPY tools/licence-check/package.json tools/licence-check/
 RUN pnpm install --frozen-lockfile --filter @off-book/client...
 COPY tsconfig.base.json ./
 COPY packages/rules packages/rules
+COPY packages/protocol packages/protocol
 COPY apps/client apps/client
 RUN pnpm --filter @off-book/client build
 
@@ -31,12 +33,14 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/client/package.json apps/client/
 COPY apps/server/package.json apps/server/
 COPY packages/rules/package.json packages/rules/
+COPY packages/protocol/package.json packages/protocol/
 COPY tools/licence-check/package.json tools/licence-check/
 # Only the server and what it needs at run time; workspace packages stay symlinked outside
 # node_modules, where Node will strip their types.
 RUN pnpm install --frozen-lockfile --prod --filter @off-book/server... && npm uninstall --global pnpm
 COPY LICENSE THIRD_PARTY_LICENCES.md ./
 COPY packages/rules/src packages/rules/src
+COPY packages/protocol/src packages/protocol/src
 COPY apps/server/src apps/server/src
 COPY --from=build /app/apps/client/dist apps/client/dist
 ENV OFF_BOOK_CLIENT_DIR=/app/apps/client/dist

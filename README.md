@@ -7,6 +7,7 @@ An open-source chess app in which every game starts from a pre-played position, 
 | Path | What it is |
 | --- | --- |
 | `packages/rules` | Shared chess rules (chess.js), used identically by client and server |
+| `packages/protocol` | The game WebSocket's message types, shared by client and server |
 | `apps/server` | Live server: one Node.js process |
 | `apps/client` | Progressive web app |
 | `infra/` | Azure staging environment as Bicep, deployed by `.github/workflows/deploy-staging.yml` |

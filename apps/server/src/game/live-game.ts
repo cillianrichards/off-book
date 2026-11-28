@@ -1,7 +1,7 @@
 // A game in play, held in memory by the game service (D-01). It does no I/O and sets no timers: the
 // service passes the time in and decides when to save.
 
-import { ChessGame, type Colour, type MoveIntent, type Termination } from '@off-book/rules';
+import { ChessGame, type Colour, type MoveIntent } from '@off-book/rules';
 
 import {
   type ClockState,
@@ -19,19 +19,21 @@ import {
 } from './clock.ts';
 import type { GameRecord } from './store.ts';
 
-export type GameStatus = 'started' | 'finished' | 'aborted';
-export type Result = '1-0' | '0-1' | '1/2-1/2';
-/** How a game ended: by the rules (P2-03), on time, by abandonment, or aborted before it began. */
-export type GameTermination = Termination | 'flag' | 'abandonment' | 'aborted';
+import type {
+  ClockReading,
+  ClockSettings,
+  ClockView,
+  GameStatus,
+  GameTermination,
+  GameView,
+  Result,
+} from '@off-book/protocol';
+
+export type { ClockReading, ClockSettings, ClockView, GameStatus, GameTermination, GameView, Result };
 
 export type Ending =
   | { readonly status: 'finished'; readonly result: Result; readonly termination: GameTermination }
   | { readonly status: 'aborted'; readonly termination: 'aborted' };
-
-export interface ClockSettings {
-  readonly initialSeconds: number;
-  readonly incrementSeconds: number;
-}
 
 export interface NewGame {
   readonly id: string;
@@ -68,30 +70,6 @@ export type MoveOutcome =
   /** The same move again for a ply already played by this player: a resend, which changes nothing. */
   | { readonly kind: 'duplicate'; readonly ply: number }
   | { readonly kind: 'rejected'; readonly reason: 'gameOver' | 'stale' | 'notYourTurn' | 'illegal' };
-
-export interface ClockReading {
-  /** Each side's remaining time in centiseconds, as it stands when read. */
-  readonly white: number;
-  readonly black: number;
-  readonly running: boolean;
-}
-
-export interface ClockView extends ClockSettings, ClockReading {}
-
-export interface GameView {
-  readonly id: string;
-  readonly players: Readonly<Record<Colour, string>>;
-  readonly initialFen: string;
-  readonly fen: string;
-  /** Every move since the starting FEN, in SAN; the client rebuilds the game from these (P2-09). */
-  readonly moves: readonly string[];
-  readonly ply: number;
-  readonly turn: Colour;
-  readonly status: GameStatus;
-  readonly result?: Result;
-  readonly termination?: GameTermination;
-  readonly clock: ClockView;
-}
 
 // Lichess's limits for a real-time clock: up to 180 minutes, with up to 180 seconds' increment.
 const MAX_INITIAL_SECONDS = 180 * 60;
