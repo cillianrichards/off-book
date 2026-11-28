@@ -31,7 +31,7 @@ export interface Connection {
 
 export type Join =
   | { readonly ok: true; attach(socket: PlayerSocket): Connection }
-  | { readonly ok: false; readonly error: 'notFound' | 'notAPlayer' };
+  | { readonly ok: false; readonly error: 'notFound' | 'notAPlayer' | 'unavailable' };
 
 export interface CreateGame {
   readonly white: string;
@@ -52,6 +52,11 @@ export interface GameServiceOptions {
   readonly bus: GameBus;
   /** How long a move may wait to be saved, unless the game's status changes first (P2-08). */
   readonly saveDelayMs?: number;
+  /**
+   * Hold every request until `resume` has loaded the live games (P2-26). A process waiting for the
+   * live-games lock must not load a game, even to show it, or it would hold a copy it does not own.
+   */
+  readonly waitForResume?: boolean;
 }
 
 interface Entry {
@@ -88,6 +93,9 @@ export class GameService {
   readonly #games = new Map<string, Entry>();
   readonly #startedAt: number;
   #stopping = false;
+  #resumed = false;
+  #resolveLoaded: () => void = () => {};
+  readonly #loaded: Promise<void>;
 
   constructor(options: GameServiceOptions) {
     this.#time = options.time;
@@ -96,6 +104,24 @@ export class GameService {
     this.#bus = options.bus;
     this.#saveDelayMs = options.saveDelayMs ?? SAVE_DELAY_MS;
     this.#startedAt = this.#time.now();
+    this.#loaded = new Promise(resolve => {
+      this.#resolveLoaded = resolve;
+    });
+    if (options.waitForResume !== true) {
+      this.#resumed = true;
+      this.#resolveLoaded();
+    }
+  }
+
+  /** Whether the live games are loaded, so requests are being answered (P2-26). */
+  get ready(): boolean {
+    return this.#resumed;
+  }
+
+  /** Waits for the live games: true once loaded, false if the service stopped before they were. */
+  async #whenLoaded(): Promise<boolean> {
+    await this.#loaded;
+    return this.#resumed;
   }
 
   /**
@@ -116,10 +142,13 @@ export class GameService {
       resumed += 1;
     }
     this.#log.info('games resumed', { count: resumed });
+    this.#resumed = true;
+    this.#resolveLoaded();
     return resumed;
   }
 
   async create(input: CreateGame): Promise<CreatedGame> {
+    if (!(await this.#whenLoaded())) throw new Error('The server stopped before loading its games');
     // A clash between random eight-character ids is all but impossible, but costs only a retry.
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const created = LiveGame.create({ ...input, id: newGameId(), now: this.#time.now() });
@@ -137,6 +166,7 @@ export class GameService {
   }
 
   async view(id: string): Promise<GameView | undefined> {
+    if (!(await this.#whenLoaded())) return undefined;
     const live = this.#games.get(id);
     if (live !== undefined) return live.game.view(this.#time.now());
     const record = await this.#store.load(id);
@@ -145,11 +175,13 @@ export class GameService {
 
   /** The game as last played, live or saved, for exports such as PGN (P2-18). */
   async record(id: string): Promise<GameRecord | undefined> {
+    if (!(await this.#whenLoaded())) return undefined;
     const live = this.#games.get(id);
     return live !== undefined ? live.game.toRecord() : this.#store.load(id);
   }
 
   async join(id: string, userId: string): Promise<Join> {
+    if (!(await this.#whenLoaded())) return { ok: false, error: 'unavailable' };
     const entry = await this.#entry(id);
     if (entry === undefined) return { ok: false, error: 'notFound' };
     const colour = entry.game.colourOf(userId);
@@ -163,6 +195,8 @@ export class GameService {
    */
   async shutdown(): Promise<void> {
     this.#stopping = true;
+    // Stopping before the games were loaded: release anything waiting for them, unanswered.
+    this.#resolveLoaded();
     for (const entry of this.#games.values()) {
       entry.flagCheck?.cancel();
       if (entry.game.status !== 'started') continue;

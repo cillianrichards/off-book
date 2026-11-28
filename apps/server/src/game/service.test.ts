@@ -618,3 +618,76 @@ describe('telling the players (P2-08)', () => {
     ]);
   });
 });
+
+describe('waiting for the live games (P2-26)', () => {
+  /** A saved game three plies in, and a service that must wait for `resume` before touching it. */
+  async function waitingService() {
+    const setup = await table();
+    await setup.whiteSays({ t: 'move', ply: 0, uci: 'e2e4' });
+    await setup.blackSays({ t: 'move', ply: 1, uci: 'e7e5' });
+    await setup.whiteSays({ t: 'move', ply: 2, uci: 'g1f3' });
+    await setup.service.shutdown();
+    const service = new GameService({
+      time: setup.time,
+      log: silentLog,
+      store: setup.store,
+      bus: new Bus(silentLog),
+      waitForResume: true,
+    });
+    return { service, id: setup.id, store: setup.store };
+  }
+
+  /** Whether a promise has settled after the event loop has had a turn. */
+  const settledSoon = async (promise: Promise<unknown>) => {
+    let settled = false;
+    void promise.then(() => (settled = true));
+    await new Promise(resolve => setImmediate(resolve));
+    return settled;
+  };
+
+  test('holds views, exports, joins and new games until the games are loaded', async () => {
+    const { service, id } = await waitingService();
+    assert.equal(service.ready, false);
+    const view = service.view(id);
+    const record = service.record(id);
+    const joined = service.join(id, 'alice');
+    const created = service.create({
+      white: 'carol',
+      black: 'dave',
+      initialFen: STANDARD_FEN,
+      clock: { initialSeconds: 600, incrementSeconds: 0 },
+    });
+    for (const pending of [view, record, joined, created]) assert.equal(await settledSoon(pending), false);
+
+    assert.equal(await service.resume(), 1);
+    assert.equal(service.ready, true);
+    assert.equal((await view)?.ply, 3);
+    assert.equal((await record)?.moves.length, 3);
+    assert.ok((await joined).ok);
+    assert.ok((await created).ok);
+  });
+
+  test('loads no game for anyone who asked before it stopped without loading', async () => {
+    const { service, id } = await waitingService();
+    const view = service.view(id);
+    const joined = service.join(id, 'alice');
+    await service.shutdown();
+    assert.equal(await view, undefined);
+    assert.deepEqual(await joined, { ok: false, error: 'unavailable' });
+    await assert.rejects(
+      service.create({
+        white: 'carol',
+        black: 'dave',
+        initialFen: STANDARD_FEN,
+        clock: { initialSeconds: 600, incrementSeconds: 0 },
+      }),
+      /stopped before loading/,
+    );
+  });
+
+  test('answers at once when not asked to wait', async () => {
+    const setup = await table();
+    assert.equal(setup.service.ready, true);
+    assert.ok(await settledSoon(setup.service.view(setup.id)));
+  });
+});

@@ -1,5 +1,6 @@
 // Starts the live server in this process and stops it cleanly on SIGTERM or SIGINT (P2-08): games are
-// saved, with lila's shutdown allowance, before the WebSockets close.
+// saved, with lila's shutdown allowance, before the WebSockets close. It listens before it loads any game,
+// and loads them only once it holds the live-games lock (P2-26), so a deploy hands games over safely.
 //
 // Environment:
 //   DATABASE_URL   the PostgreSQL to save games in, at the latest migration (required)
@@ -10,6 +11,7 @@ import pg from 'pg';
 
 import { Bus } from './bus.ts';
 import { type GameEvent, GameService, PostgresGameStore } from './game/index.ts';
+import { PostgresLiveGamesLock } from './live-games-lock.ts';
 import { errorFields, jsonLog as log } from './log.ts';
 import { type Authenticate, startServer } from './server.ts';
 import { realTime } from './time.ts';
@@ -42,8 +44,8 @@ export async function run(options: RunOptions): Promise<void> {
     // Nothing listens yet: rating (Phase 4) and fair play (Phase 5) will.
     bus: new Bus<GameEvent>(log),
     ...(options.saveDelayMs === undefined ? {} : { saveDelayMs: options.saveDelayMs }),
+    waitForResume: true,
   });
-  await games.resume();
   const clientDir = process.env.OFF_BOOK_CLIENT_DIR;
   const server = await startServer({
     port,
@@ -54,13 +56,23 @@ export async function run(options: RunOptions): Promise<void> {
   });
   log.info('listening', { port: server.port });
 
+  // Hand-over (P2-26, D-23): listening already, so the host's health check passes and a deploy stops the
+  // old process; this one loads the live games only once the old one has saved them and let go.
+  const lock = new PostgresLiveGamesLock({ connectionString: databaseUrl, log });
+  const waiting = new AbortController();
+  let acquiring: Promise<boolean> = Promise.resolve(false);
+
   let stopping = false;
   const stop = async (signal: string): Promise<void> => {
     if (stopping) return;
     stopping = true;
     log.info('stopping', { signal });
+    waiting.abort();
     try {
+      await acquiring.catch(() => false);
       await games.shutdown();
+      // Saved: let the next process take the games before this one finishes closing.
+      await lock.release();
       await server.close();
       await pool.end();
       log.info('stopped');
@@ -71,4 +83,13 @@ export async function run(options: RunOptions): Promise<void> {
   };
   process.once('SIGTERM', () => void stop('SIGTERM'));
   process.once('SIGINT', () => void stop('SIGINT'));
+
+  // Another process may hold the games once this one's lock is gone, so it must not save another move.
+  void lock.lost.then(error => {
+    log.error('lost the live games; stopping without saving', errorFields(error));
+    process.exit(1);
+  });
+
+  acquiring = lock.acquire(waiting.signal);
+  if ((await acquiring) && !stopping) await games.resume();
 }

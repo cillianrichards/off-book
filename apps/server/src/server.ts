@@ -23,6 +23,12 @@ import { errorFields, type Log } from './log.ts';
  */
 export type Authenticate = (request: IncomingMessage) => Promise<string | undefined>;
 
+const REFUSALS = {
+  notFound: [404, 'Not Found'],
+  notAPlayer: [403, 'Forbidden'],
+  unavailable: [503, 'Service Unavailable'],
+} as const satisfies Record<string, readonly [number, string]>;
+
 export interface ServerOptions {
   readonly port: number;
   readonly host?: string;
@@ -74,12 +80,10 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     const userId = await authenticate(request);
     if (userId === undefined) return refuse(socket, 401, 'Unauthorized');
     const joined = await games.join(gameId, userId);
-    if (!joined.ok)
-      return refuse(
-        socket,
-        joined.error === 'notFound' ? 404 : 403,
-        joined.error === 'notFound' ? 'Not Found' : 'Forbidden',
-      );
+    if (!joined.ok) {
+      const [status, text] = REFUSALS[joined.error];
+      return refuse(socket, status, text);
+    }
 
     sockets.handleUpgrade(request, socket, head, ws => {
       alive.add(ws);
@@ -143,7 +147,9 @@ async function handleHttp(
     return json(response, 405, { error: 'Method not allowed' });
   }
   const path = pathOf(request);
-  if (path === '/health') return json(response, 200, { status: 'ok' });
+  // Healthy while still waiting for the live games, so a deploy's hand-over can stop the old process (D-23).
+  if (path === '/health')
+    return json(response, 200, { status: 'ok', games: games.ready ? 'ready' : 'waiting' });
   const game = /^\/api\/games\/([^/]+)$/.exec(path)?.[1];
   if (game !== undefined && GAME_ID.test(game)) {
     const view = await games.view(game);

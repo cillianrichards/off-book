@@ -192,4 +192,35 @@ describe('the server process (P2-08)', { skip }, () => {
     }
     assert.equal(await second.kill('SIGTERM'), 0);
   });
+
+  test('a second process started mid-game takes over without losing a move (P2-26)', async () => {
+    const game = await newGame();
+    const first = await startServer(60_000);
+    const players = await seat(first, game);
+    // Each side's first move is saved at once; the rest wait in the first process's memory.
+    await play(players, 0, ['e2e4', 'e7e5', 'g1f3', 'b8c6']);
+
+    // As a deploy does: the new process starts while the old one is still playing.
+    const second = await startServer(60_000);
+    const health = async (server: Server) =>
+      ((await (await fetch(`http://127.0.0.1:${server.port}/health`)).json()) as { games: string }).games;
+    assert.equal(await health(second), 'waiting', 'healthy, but not holding the games');
+    const seatedOnSecond = seat(second, game);
+
+    // The first process goes on playing; none of these moves is saved yet.
+    await play(players, 4, ['f1b5', 'a7a6']);
+    assert.deepEqual((await store.load(game.id))?.moves, ['e4', 'e5']);
+
+    assert.equal(await first.kill('SIGTERM'), 0);
+    const taken = await seatedOnSecond;
+    assert.deepEqual(
+      taken.state.game.moves,
+      ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5', 'a6'],
+      'the second process loaded the game only after the first had saved every move',
+    );
+    assert.equal(await health(second), 'ready');
+    await play(taken, 6, ['b5a4']);
+    assert.equal(await second.kill('SIGTERM'), 0);
+    assert.deepEqual((await store.load(game.id))?.moves, ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5', 'a6', 'Ba4']);
+  });
 });

@@ -51,7 +51,7 @@ describe('HTTP', () => {
   test('answers the health check', async () => {
     const response = await fetch(`http://${base}/health`);
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { status: 'ok' });
+    assert.deepEqual(await response.json(), { status: 'ok', games: 'ready' });
   });
 
   test('shows a game to anyone', async () => {
