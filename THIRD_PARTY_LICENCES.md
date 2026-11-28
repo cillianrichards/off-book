@@ -24,6 +24,8 @@ Transitive packages are held to the allowlist but not listed here, because this 
 | --- | --- | --- | --- | --- | --- |
 | [chess.js](https://github.com/jhlywa/chess.js), `chess.js` (npm) | `packages/rules`, so client and server | 1.4.0 | BSD-2-Clause | Yes | Keep the copyright notice in source. The client bundle is a binary redistribution, so the notice must also ship with it (see below). |
 | [chessground](https://github.com/lichess-org/chessground), `@lichess-org/chessground` (npm) | `apps/client` (board) | 10.5.0 | GPL-3.0-or-later | Yes, via section 13 | Conveyed to browsers in the client bundle; our corresponding source is published under the AGPL. Use the scoped package: the unscoped `chessground` package on npm is marked as no longer supported. |
+| cburnett piece set and brown board, from chessground's `assets/` | `apps/client` (board, P2-15) | as chessground 10.5.0 | Pieces GPL-2.0-or-later, by Colin M.L. Burnett, as [Lichess records](https://github.com/lichess-org/lila/blob/master/COPYING.md); board theme GPL-3.0-or-later with chessground | Yes | Conveyed in the client bundle as CSS. Some other Lichess piece sets are non-free; check each before adopting it. |
+| Lichess's "sfx" sounds, `Move.mp3` and `Capture.mp3`, copied to `apps/client/public/sound/` | `apps/client` (move sounds, P2-15) | lila `master`, 28 November 2026 | AGPL-3.0-or-later, by Enigmahack, as [Lichess records](https://github.com/lichess-org/lila/blob/master/COPYING.md) | Yes | Conveyed to browsers. Lichess's default "standard" sounds are listed there among its non-free files, so they are not used. |
 | [Stockfish](https://github.com/official-stockfish/Stockfish), native CLI | `pipeline/` (pool analysis) | Release 19 (`sf_19`, commit `edb0d9d`), pinned in P1-01 by its bench signature | GPL-3.0-or-later | Yes | None while the binary is only run, not distributed. It runs as a separate program over UCI and is not linked into our code. Its evaluations are data we publish in the pool, not a copy of Stockfish. Binaries and network files stay out of git. |
 | [python-chess](https://github.com/niklasf/python-chess), `chess` (PyPI) | `pipeline/` (reading games, P1-02, and driving Stockfish, P1-03) | 1.11.2 | GPL-3.0-or-later | Yes, via section 13 | None while the pipeline runs offline and is not distributed as a program. Written by a Lichess developer and used by Lichess's own Python tools, such as its puzzle generator. |
 | [NumPy](https://numpy.org), `numpy` (PyPI) | `pipeline/` (counting positions, P1-02) | 2.5.4 | BSD-3-Clause, with bundled parts under 0BSD, MIT, Zlib and CC0-1.0, all on the allowlist | Yes | None while the pipeline runs offline and is not distributed as a program. |
@@ -54,8 +56,6 @@ Game collections the pipeline reads. Off Book publishes positions and counts der
 
 Recorded here when the backlog item that needs them makes the choice.
 
-- **Piece set and board theme** (P2-15). chessground ships the cburnett piece set, which [Lichess records](https://github.com/lichess-org/lila/blob/master/COPYING.md) as GPL-2.0-or-later by Colin M.L. Burnett, so it is compatible. Some other Lichess piece sets are non-free; check each before adopting it.
-- **Move sounds** (P2-15).
 - **Lichess open database** (P3-01), the source of rarity counts and calibration data. Confirm its licence when ingestion starts.
 
 ## Development tools

@@ -12,6 +12,7 @@
     "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@lichess-org/chessground": "10.5.0",
     "@off-book/protocol": "workspace:*",
     "@off-book/rules": "workspace:*",
     "react": "19.3.1",

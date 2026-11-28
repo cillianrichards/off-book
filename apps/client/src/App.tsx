@@ -1,6 +1,7 @@
 // The application shell (P2-14): a header and the page the address asks for. The board, clocks and
-// result arrive with P2-15 to P2-17.
+// result arrive with P2-15 to P2-17; the board is in.
 
+import { GamePage } from './game/GamePage.tsx';
 import type { Route } from './route.ts';
 
 export function App({ route }: { readonly route: Route }) {
@@ -26,13 +27,7 @@ function Page({ route }: { readonly route: Route }) {
         <p>Chess from positions off the book. Open a challenge link to play.</p>
       </section>
     );
-  if (route.page === 'game')
-    return (
-      <section>
-        <h1>Game {route.id}</h1>
-        <p className="muted">The board is not built yet.</p>
-      </section>
-    );
+  if (route.page === 'game') return <GamePage id={route.id} />;
   return (
     <section>
       <h1>Not found</h1>

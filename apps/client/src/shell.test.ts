@@ -101,7 +101,8 @@ describe('the shell', () => {
       const html = render(route);
       assert.match(html, /<header class="shell-header"><a class="brand" href="\/">Off Book<\/a><\/header>/);
     }
-    assert.match(render({ page: 'game', id: 'abcd1234' }), /<h1>Game abcd1234<\/h1>/);
+    // A game page waits for its WebSocket; the board itself is tested in game/components.test.ts.
+    assert.match(render({ page: 'game', id: 'abcd1234' }), /Connecting…/);
     assert.match(render({ page: 'notFound' }), /<h1>Not found<\/h1>/);
   });
 });

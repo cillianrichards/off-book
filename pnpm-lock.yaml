@@ -187,6 +187,9 @@ importers:
 
   apps/client:
     dependencies:
+      '@lichess-org/chessground':
+        specifier: 10.5.0
+        version: 10.5.0
       '@off-book/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -289,6 +292,10 @@ packages:
 
   '@emnapi/wasi-threads@2.2.0':
     resolution: {integrity: sha512-JP7OYH38Q7+pyTAe14raZHLQIK7BDKbdwji+Xi3pcd/6QkJYQH3SX4wu6EplGrGJWRepoNzedfm0G3B9Z4e9Rw==}
+
+  '@lichess-org/chessground@10.5.0':
+    resolution: {integrity: sha512-LmTNnzCQ67RQsryzouWY0jYoN24LlpubtPyYko1gmdpTj5HSfz0VgUGB4Gpo6oifg0MyeT9YeV2TdZEbOP6byA==}
+    engines: {node: '>=24', pnpm: '>=12'}
 
   '@napi-rs/wasm-runtime@1.2.6':
     resolution: {integrity: sha512-mRyDmEw9/fCDXCGfL1sbgIw/GUK0PVxRW4YwgPN61F3LQ+fSyoBFarJVzgGyhF6kRzEQZ0FejDqm4WLXSeqQmw==}
@@ -1031,6 +1038,8 @@ snapshots:
     dependencies:
       tslib: 2.9.1
     optional: true
+
+  '@lichess-org/chessground@10.5.0': {}
 
   '@napi-rs/wasm-runtime@1.2.6(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)':
     dependencies:

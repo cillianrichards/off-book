@@ -1,3 +1,8 @@
+/* chessground's board, the brown theme and the cburnett pieces (GPL-2.0-or-later), as Lichess's defaults. */
+@import '@lichess-org/chessground/assets/chessground.base.css';
+@import '@lichess-org/chessground/assets/chessground.brown.css';
+@import '@lichess-org/chessground/assets/chessground.cburnett.css';
+
 /* Dark by default, in Lichess's palette; sized for a phone first and centred on wider screens. */
 :root {
   color-scheme: dark;
@@ -69,4 +74,147 @@ h1 {
 
 .muted {
   color: var(--muted);
+}
+
+/* The game page (P2-15): the board as wide as a phone allows, the moves beside it on a wider screen. */
+.game {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.game-board {
+  width: 100%;
+  max-width: min(100%, calc(100dvh - 9rem));
+  margin: 0 auto;
+}
+
+.board {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.board-ground {
+  width: 100%;
+  height: 100%;
+}
+
+.player {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+}
+
+.player-name {
+  color: var(--text-strong);
+}
+
+.player-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.player-dot.online {
+  background: var(--accent);
+}
+
+.moves {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.5rem;
+  overflow-x: auto;
+  list-style: none;
+  white-space: nowrap;
+  background: var(--surface);
+}
+
+.move-row {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.move-number {
+  color: var(--muted);
+}
+
+.move.current {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.game-over {
+  color: var(--text-strong);
+}
+
+/* File letters inside the bottom squares, at their right, where Lichess puts them; chessground's default
+   shifts them a square to the right and off the edge of a phone screen. */
+.board .cg-wrap coords.files {
+  left: 0;
+  bottom: 0;
+}
+
+.board .cg-wrap coords.files coord {
+  padding-right: 4px;
+  text-align: right;
+}
+
+/* The promotion picker sits over the board, one column of four squares on the promotion file. */
+.promotion {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.promotion-choice {
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #b0b0b0;
+  cursor: pointer;
+}
+
+.promotion-choice:hover,
+.promotion-choice:focus-visible {
+  background: var(--accent);
+}
+
+.promotion-choice piece {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+}
+
+@media (min-width: 48rem) {
+  .game {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .game-board {
+    flex: 1;
+    max-width: min(40rem, calc(100dvh - 7rem));
+  }
+
+  .game-side {
+    width: 14rem;
+  }
+
+  .moves {
+    display: grid;
+    grid-template-columns: 1fr;
+    max-height: 60dvh;
+    overflow-y: auto;
+    white-space: normal;
+  }
 }
